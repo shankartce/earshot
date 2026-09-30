@@ -1,7 +1,7 @@
 // Chat, typing, unread counts and floating reactions — the "room feels alive" layer.
 import { computed, effect, signal } from '@preact/signals'
 import { socket } from '../realtime/socket.ts'
-import { currentItem, me, participantById, room, toast } from './room.ts'
+import { currentItem, me, participantById, room, roomCode, toast } from './room.ts'
 
 // ---- chat ----
 
@@ -52,6 +52,7 @@ export const chatOpen = signal(false)
 export const unread = signal(0)
 const seen = () => chatOpen.value && document.visibilityState === 'visible'
 effect(() => { if (chatOpen.value) unread.value = 0 })
+effect(() => { roomCode.value; unread.value = 0 }) // a new room starts with no unread badge
 document.addEventListener('visibilitychange', () => { if (seen()) unread.value = 0 })
 
 // Unread count in the tab title so you notice from another tab.

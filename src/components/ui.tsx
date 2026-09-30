@@ -77,15 +77,17 @@ export function Toasts() {
 }
 
 const PILL = {
-  synced: { label: 'Synced', cls: 'ok' },
-  'catching-up': { label: 'Catching up', cls: 'warn' },
-  reconnecting: { label: 'Reconnecting', cls: 'bad' },
+  synced: { label: 'Synced', cls: 'ok', hint: 'You hear the same moment as everyone else.' },
+  'catching-up': { label: 'Catching up', cls: 'warn', hint: 'Getting back in step with the room.' },
+  reconnecting: { label: 'Reconnecting', cls: 'bad', hint: 'Connection lost — reconnecting…' },
+  'not-playing': { label: 'Not playing here', cls: 'muted-pill', hint: "The room is playing, but you can't hear it on this device yet." },
 }
 
+// Not a live region: sync can flicker on every correction; real disconnects have their own banner.
 export function ConnectionPill() {
   const s = PILL[syncStatus.value]
   return (
-    <span class={`pill conn ${s.cls}`} role="status" aria-label={`Connection: ${s.label}`}>
+    <span class={`pill conn ${s.cls}`} title={s.hint} aria-label={`Sync: ${s.label}. ${s.hint}`}>
       <span class="dot" aria-hidden="true" />{s.label}
     </span>
   )

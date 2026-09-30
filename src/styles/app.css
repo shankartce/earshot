@@ -355,7 +355,10 @@ fieldset:disabled .segmented label { cursor: not-allowed; opacity: 0.6; }
 .q-item:hover { background: rgba(255, 255, 255, 0.04); }
 .q-item.current { background: linear-gradient(90deg, rgba(255, 122, 89, 0.16), rgba(255, 122, 89, 0.03)); }
 .q-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 8px; border: 0; background: none; text-align: left; border-radius: 14px; }
-.q-main:disabled { cursor: default; }
+.q-main:disabled, .q-main[aria-disabled='true'] { cursor: default; }
+.pill.muted-pill { color: var(--text-muted); }
+.link-btn { border: 0; background: none; padding: 0; color: var(--accent-2); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.mini-listen { flex: none; margin-right: 4px; }
 .q-art { position: relative; flex: none; }
 .q-eq { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); border-radius: 14%; }
 .q-text { display: grid; min-width: 0; flex: 1; }

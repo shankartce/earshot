@@ -106,11 +106,11 @@ export function Queue() {
                     setDrag(null)
                   }}>
                   {reorder && <span class="q-grip" aria-hidden="true"><Icon name="grip" size={16} /></span>}
-                  <button class="q-main" disabled={!canControl.value}
+                  <button class="q-main" aria-disabled={!canControl.value || undefined}
                     aria-label={`${isCurrent ? 'Now playing: ' : 'Play '}${item.track.title}${item.track.artist ? ` by ${item.track.artist}` : ''}. Position ${i + 1} of ${items.length}`}
                     aria-current={isCurrent ? 'true' : undefined}
                     aria-keyshortcuts={reorder ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
-                    onClick={() => playback({ type: 'PLAY_ITEM', itemId: item.id })}
+                    onClick={() => { if (canControl.value) playback({ type: 'PLAY_ITEM', itemId: item.id }) }}
                     onKeyDown={e => {
                       if (!reorder || !e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
                       e.preventDefault()

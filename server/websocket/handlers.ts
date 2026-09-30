@@ -29,7 +29,14 @@ const newId = () => crypto.randomUUID()
 
 export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: RealtimeOptions): IO {
   // destroyUpgrade:false so Vite's HMR websocket can share the dev server.
-  const io: IO = new Server(http, { maxHttpBufferSize: 256 * 1024, destroyUpgrade: false })
+  const io: IO = new Server(http, {
+    maxHttpBufferSize: 256 * 1024,
+    destroyUpgrade: false,
+    // Background tabs and sleepy phones answer heartbeats late; don't drop them for it.
+    // (A closed connection is still noticed immediately — this only affects silent stalls.)
+    pingInterval: 25_000,
+    pingTimeout: 60_000,
+  })
   const leaveTimers = new Map<string, NodeJS.Timeout>() // `${code}:${pid}`
   const endTimers = new Map<string, NodeJS.Timeout>() // code
 

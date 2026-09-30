@@ -1,6 +1,6 @@
 // The stage: artwork, song info, progress, transport controls, and the local-readiness state.
 import { useEffect, useState } from 'preact/hooks'
-import { isIOS, prefs, readiness, roomPosition, setPrefs, syncStatus, tuneIn, unlockAudio } from '../audio/player.ts'
+import { heldHere, isIOS, mutedHere, prefs, readiness, roomPosition, setPrefs, syncStatus, tuneIn, unlockAudio, unplayable } from '../audio/player.ts'
 import { vizStyle } from '../audio/visualizer.ts'
 import { stageView } from '../state/ui.ts'
 import { LICENSES, type ShareOffer, type Track } from '../../shared/types.ts'
@@ -72,10 +72,33 @@ function Readiness() {
   if (!item) return null
 
   if (state === 'needs-tap') {
-    return (
+    return heldHere.value ? (
+      <div class="banner accent">
+        <button class="btn primary big" onClick={tuneIn}><Icon name="play" /> Resume listening</button>
+        <p class="muted small">Paused on this device (headphones, a call or another app). The room kept playing.</p>
+      </div>
+    ) : (
       <div class="banner accent">
         <button class="btn primary big" onClick={tuneIn}><Icon name="tap" /> Tap to tune in</button>
         <p class="muted small">Your browser needs one tap before it can play audio.</p>
+      </div>
+    )
+  }
+  if (mutedHere.value && state === 'ready') {
+    return (
+      <p class="banner quiet" role="status">
+        Muted on this device · <button class="link-btn" onClick={() => { mutedHere.value = false }}>Unmute</button>
+      </p>
+    )
+  }
+  if (state === 'missing' && unplayable.value) {
+    return (
+      <div class="banner warn" role="status">
+        <Icon name="warn" />
+        <div class="grow">
+          <p class="strong">Your copy can't be played in this browser.</p>
+          <p class="muted small">Try adding the song in another format (MP3 or AAC work almost everywhere).</p>
+        </div>
       </div>
     )
   }

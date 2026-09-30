@@ -14,6 +14,14 @@ export function estimate(samples: Sample[]): { offset: number; rtt: number } | n
   return { offset: best.server - (best.t0 + best.t1) / 2, rtt: best.t1 - best.t0 }
 }
 
+/**
+ * Should a new estimate replace the current one? A congested sync (bigger round trip) gives a worse
+ * offset, so keep the old one unless the new sample is comparably clean — or the old one is stale.
+ */
+export function shouldAccept(prev: { rtt: number; at: number } | null, rtt: number, now: number, maxAgeMs = 120_000): boolean {
+  return !prev || rtt <= prev.rtt * 1.5 + 2 || now - prev.at > maxAgeMs
+}
+
 export class Clock {
   offset = 0
   rtt = Infinity
@@ -30,7 +38,10 @@ export class Clock {
     return this.now() + this.offset
   }
 
-  async sync(rounds = 5, timeoutMs = 3000) {
+  private acceptedAt = 0
+
+  /** `force`: always take the new estimate (e.g. after reconnecting, the server may have restarted). */
+  async sync(rounds = 5, force = false, timeoutMs = 3000) {
     const samples: Sample[] = []
     for (let i = 0; i < rounds; i++) {
       const t0 = this.now()
@@ -41,7 +52,11 @@ export class Clock {
       if (server !== null) samples.push({ t0, server, t1: this.now() })
     }
     const est = estimate(samples)
-    if (est) Object.assign(this, est, { synced: true })
+    const prev = this.synced && !force ? { rtt: this.rtt, at: this.acceptedAt } : null
+    if (est && shouldAccept(prev, est.rtt, this.now())) {
+      Object.assign(this, est, { synced: true })
+      this.acceptedAt = this.now()
+    }
     return est
   }
 }

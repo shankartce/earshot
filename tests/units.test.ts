@@ -3,7 +3,7 @@ import { rateLimiter } from '../server/rateLimit.ts'
 import {
   cleanText, parseCode, parseLicense, parsePlaybackCommand, parseProfile, parseQueueCommand, parseReaction, parseSignal, parseTrack,
 } from '../shared/validate.ts'
-import { Clock, estimate } from '../src/sync/clock.ts'
+import { Clock, estimate, shouldAccept } from '../src/sync/clock.ts'
 import { DEFAULT_DRIFT, decide, learnSeekLead } from '../src/sync/drift.ts'
 import { groupMessages, typingText } from '../src/utils/chat.ts'
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts'
@@ -87,6 +87,29 @@ describe('clock sync', () => {
     expect(Math.abs(clock.offset - TRUE_OFFSET)).toBeLessThanOrEqual(1) // (12,14) sample → 1ms error
     expect(clock.rtt).toBe(26)
     expect(clock.serverNow()).toBe(local + clock.offset)
+  })
+})
+
+describe('clock offset acceptance', () => {
+  it('keeps a clean estimate over a congested one, unless it is stale or forced', () => {
+    expect(shouldAccept(null, 500, 0)).toBe(true)
+    expect(shouldAccept({ rtt: 40, at: 0 }, 55, 1000)).toBe(true) // comparable
+    expect(shouldAccept({ rtt: 40, at: 0 }, 300, 1000)).toBe(false) // congested sample
+    expect(shouldAccept({ rtt: 40, at: 0 }, 300, 200_000)).toBe(true) // old estimate is stale
+    expect(shouldAccept({ rtt: 1, at: 0 }, 3, 10)).toBe(true) // tiny localhost RTTs get slack
+  })
+
+  it('a congested resync does not move the offset; a forced one does', async () => {
+    let local = 0
+    let delay = [10, 10]
+    const clock = new Clock(async () => { local += delay[0]; const s = local + 5000 + (delay[0] > 100 ? 400 : 0); local += delay[1]; return s }, () => local)
+    await clock.sync(3)
+    expect(clock.offset).toBe(5000)
+    delay = [300, 20] // congested and asymmetric → a skewed estimate
+    await clock.sync(3)
+    expect(clock.offset).toBe(5000)
+    await clock.sync(3, true)
+    expect(clock.offset).not.toBe(5000)
   })
 })
 

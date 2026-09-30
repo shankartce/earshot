@@ -22,24 +22,52 @@ import { profile, randomAvatar, saveProfile, tokenFor } from '../state/profile.t
 import { canControl, connection, currentItem, joinRoom, leaveRoom, peekRoom, playback, room } from '../state/room.ts'
 import { hues } from '../utils/format.ts'
 
+const GONE = "That room isn't available."
+
 export function RoomPage() {
   const { params } = useRoute()
+  const { route } = useLocation()
   const code = parseCode(params.code)
-  const [error, setError] = useState<string | null>(code ? null : "That room isn't available.")
+  const [error, setError] = useState<string | null>(code ? null : GONE)
   const [joining, setJoining] = useState(false)
   const inRoom = room.value?.code === code
 
+  // /room/f7k9q → /room/F7K9Q so everything that compares paths (dock, nav) recognises the room.
+  useEffect(() => {
+    if (code && params.code !== code) route(`/room/${code}${location.search}`, true)
+  }, [params.code])
+
   // Returning to a room we have a token for (reload, reconnect, resume): rejoin without asking.
+  // A transient failure (timeout, rate limit) is retried when the connection comes back.
   useEffect(() => {
     if (!code || inRoom || !profile.value || !tokenFor(code) || connection.value !== 'online') return
     setJoining(true)
+    setError(null)
     joinRoom(code, profile.value).then(r => {
       setJoining(false)
       if (!r.ok) setError(r.error)
     })
   }, [code, connection.value])
 
-  if (error) return <RoomUnavailable message={error} />
+  if (error === GONE || error?.includes("isn't available")) return <RoomUnavailable message={error} />
+  if (error) {
+    return (
+      <main class="page center">
+        <div class="card narrow">
+          <Empty icon="warn" title="Couldn't get into the room just now.">
+            <p>{error}</p>
+            <button class="btn primary" onClick={() => {
+              setError(null)
+              if (code && profile.value) {
+                setJoining(true)
+                joinRoom(code, profile.value).then(r => { setJoining(false); if (!r.ok) setError(r.error) })
+              }
+            }}>Retry</button>
+          </Empty>
+        </div>
+      </main>
+    )
+  }
   if (inRoom) return <RoomView />
   if (joining || (code && tokenFor(code) && profile.value)) return <div class="page center"><p class="muted pulse">Joining the room…</p></div>
   return <JoinGate code={code!} onError={setError} />
@@ -198,7 +226,11 @@ function useShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || !canControl.value) return
-      if ((e.target as HTMLElement).closest('input, textarea, select, button, a, [contenteditable], dialog')) return
+      const target = e.target as HTMLElement
+      // Typing somewhere, or a dialog open: shortcuts off. On a focused button or link only Space and
+      // Enter belong to it — after clicking Play, J/L/N/P should still work.
+      if (target.closest('input, textarea, select, [contenteditable], dialog')) return
+      if (target.closest('button, a, [role=tab]') && (e.key === ' ' || e.key === 'Enter')) return
       const playing = room.value?.playback.isPlaying
       const act: Record<string, () => void> = {
         ' ': () => { if (readiness.value === 'needs-tap') tuneIn(); playback({ type: playing ? 'PAUSE' : 'PLAY' }) },

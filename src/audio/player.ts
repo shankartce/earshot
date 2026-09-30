@@ -1,12 +1,13 @@
 // The local <audio> element is only the playback mechanism; the room state decides what plays and
 // where. This module continuously reconciles the two: load the local file, seek, play/pause, and
-// correct drift against the server clock.
+// correct drift against the server clock. Audio output always goes straight from the element to the
+// speakers (never through Web Audio), so locking the phone or switching apps can't silence it.
 import { computed, effect, signal } from '@preact/signals'
 import { positionAt } from '../../shared/playback.ts'
 import type { Readiness } from '../../shared/types.ts'
-import { getFile, resolveLocal } from '../library/library.ts'
+import { artUrls, getFile, resolveLocal } from '../library/library.ts'
 import { clock, socket } from '../realtime/socket.ts'
-import { connection, currentItem, me, playback, room, toast } from '../state/room.ts'
+import { canControl, connection, currentItem, me, playback, room, roomCode, toast } from '../state/room.ts'
 import { DEFAULT_DRIFT, decide, learnSeekLead, type DriftConfig } from '../sync/drift.ts'
 
 // ---- tunables (persisted; editable in /settings) ----
@@ -24,10 +25,20 @@ export function setPrefs(patch: Partial<PlayerPrefs>) {
 export const readiness = signal<Readiness>('idle')
 export const catchingUp = signal(false)
 export const driftMs = signal(0)
+/** Something outside Earshot paused us (headphones unplugged, a call, another app). Wait for a tap. */
+export const heldHere = signal(false)
+/** A guest silenced this device with their headset / lock-screen button (room playback is host-only). */
+export const mutedHere = signal(false)
+/** Your copy of the current song exists but this browser can't decode it. */
+export const unplayable = signal(false)
 export const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-export const syncStatus = computed<'synced' | 'catching-up' | 'reconnecting'>(() =>
-  connection.value !== 'online' ? 'reconnecting'
-    : catchingUp.value || readiness.value === 'loading' ? 'catching-up' : 'synced')
+
+export const syncStatus = computed<'synced' | 'catching-up' | 'reconnecting' | 'not-playing'>(() => {
+  if (connection.value !== 'online') return 'reconnecting'
+  const playing = !!room.value?.playback.isPlaying && !!currentItem.value
+  if (playing && (heldHere.value || readiness.value === 'missing' || readiness.value === 'needs-tap')) return 'not-playing'
+  return catchingUp.value || readiness.value === 'loading' ? 'catching-up' : 'synced'
+})
 
 /** Server time, ticking 4×/s so progress bars move without per-frame renders. */
 export const serverNow = signal(clock.serverNow())
@@ -44,6 +55,7 @@ export const audio = new Audio()
 audio.preload = 'auto'
 audio.preservesPitch = true
 effect(() => { audio.volume = prefs.value.volume })
+effect(() => { audio.muted = mutedHere.value })
 
 const SILENT_WAV = (() => {
   const n = 800
@@ -57,51 +69,90 @@ const SILENT_WAV = (() => {
   return URL.createObjectURL(new Blob([v], { type: 'audio/wav' }))
 })()
 
-let loadedId: string | null = null
+let loadedId: string | null = null // "roomTrackId>localId" currently in the element
 let objectUrl: string | null = null
 let seq = 0
 let lastSeekAt = 0
 let seekLead = 0.03 // s; learned per device (see learnSeekLead)
 let judgeSeek = false // next measurement is the result of a hard seek
 let correcting = false
+const failedKeys = new Set<string>() // local files this browser couldn't decode (don't retry on every action)
+
+// A pause from outside Earshot (OS, headphones unplugged, a call, another app). We only ever pause
+// the element ourselves while the room is paused or while a song is loading, so a pause that arrives
+// while the room plays and this device is ready can't be ours. (Counting our own pause() calls
+// doesn't work: changing the source discards the element's queued 'pause' events.)
+const pauseAudio = () => { if (!audio.paused) audio.pause() }
+audio.addEventListener('pause', () => {
+  if (audio.ended || !loadedId || audio.src !== objectUrl) return
+  if (room.value?.playback.isPlaying && readiness.value === 'ready') {
+    heldHere.value = true
+    readiness.value = 'needs-tap'
+  }
+})
 
 /**
  * Call synchronously inside a click handler (Create / Join / Play) so browsers that require a user
  * gesture (iOS Safari) let this element play later when the room says so.
+ * Never while a song is loading: swapping in the silent clip then would make it "end" instantly.
  */
 export function unlockAudio() {
-  if (loadedId) return
+  if (loadedId || readiness.value === 'loading') return
   audio.src = SILENT_WAV
   audio.play().catch(() => {})
 }
 
-/** "Tap to tune in": the browser blocked autoplay, so play from inside this tap. */
+/** "Tap to tune in / resume": the browser (or the OS) stopped us, so play from inside this tap. */
 export function tuneIn() {
+  heldHere.value = false
+  mutedHere.value = false
   ctx?.resume().catch(() => {})
-  audio.play().then(() => apply()).catch(() => {})
+  audio.play().then(() => apply()).catch(() => apply())
 }
 
-// ---- optional Web Audio graph (for the visualizer; analysis stays in this browser) ----
-// Once the element is routed through an AudioContext, a suspended context means silence, so the
-// graph is only built from a user gesture, and the sync loop watches its state.
+// ---- visualizer tap (analysis only) ----
+// We listen to a *copy* of the audio (captureStream) rather than routing the element through Web
+// Audio, so a suspended AudioContext only freezes the visualizer, never the music. Chromium only:
+// Firefox's mozCaptureStream mutes the element (Mozilla bug 1178751) and Safari has no capture API;
+// those browsers get the animated visualizer.
+type CapturableAudio = HTMLAudioElement & { captureStream?: () => MediaStream }
+const canCapture = typeof (audio as CapturableAudio).captureStream === 'function'
 let ctx: AudioContext | null = null
 let analyser: AnalyserNode | null = null
-let ctxStalled = 0
+let tap: MediaStreamAudioSourceNode | null = null
 
-export const getAnalyser = () => (ctx?.state === 'running' ? analyser : null)
+export const getAnalyser = () => (ctx?.state === 'running' && tap ? analyser : null)
+
+function connectTap() {
+  if (!ctx || !analyser || !canCapture) return
+  try {
+    tap?.disconnect()
+    tap = null
+    const stream = (audio as CapturableAudio).captureStream!()
+    if (!stream.getAudioTracks().length) return // not playing real audio yet; retried on 'playing'
+    tap = ctx.createMediaStreamSource(stream)
+    tap.connect(analyser)
+  } catch {
+    tap = null
+  }
+}
+audio.addEventListener('playing', connectTap) // stream tracks change when the song changes
 
 /** Call from a user gesture. Safe to call repeatedly. */
 export function enableAnalyser() {
+  if (!canCapture) return
   try {
     if (!ctx) {
       ctx = new AudioContext()
       analyser = ctx.createAnalyser()
       analyser.fftSize = 1024
       analyser.smoothingTimeConstant = 0.78
-      ctx.createMediaElementSource(audio).connect(analyser)
-      analyser.connect(ctx.destination)
+      const silent = ctx.createGain() // keeps the graph running without producing any sound
+      silent.gain.value = 0
+      analyser.connect(silent).connect(ctx.destination)
     }
     if (ctx.state !== 'running') ctx.resume().catch(() => {})
+    if (!tap && !audio.paused) connectTap()
   } catch {
     /* no Web Audio: the visualizer just idles */
   }
@@ -121,7 +172,7 @@ function seekTo(t: number) {
 }
 
 function unload() {
-  audio.pause()
+  pauseAudio()
   audio.removeAttribute('src')
   audio.load()
   if (objectUrl) URL.revokeObjectURL(objectUrl)
@@ -129,13 +180,15 @@ function unload() {
 }
 
 function loadBlob(blob: Blob): Promise<boolean> {
+  pauseAudio()
   if (objectUrl) URL.revokeObjectURL(objectUrl)
-  objectUrl = URL.createObjectURL(blob)
-  audio.src = objectUrl
+  const url = (objectUrl = URL.createObjectURL(blob))
+  audio.src = url
   return new Promise(resolve => {
-    const ok = () => { off(); resolve(true) }
-    const fail = () => { off(); resolve(false) }
-    const timer = setTimeout(fail, 15_000) // a decode that never finishes counts as unreadable
+    // Only this URL counts: metadata from anything else (e.g. the unlock clip) is not our song.
+    const ok = () => { if (audio.src !== url) return; off(); resolve(true) }
+    const fail = () => { if (audio.src !== url) return; off(); resolve(false) }
+    const timer = setTimeout(() => { off(); resolve(false) }, 15_000) // a decode that never finishes
     const off = () => {
       clearTimeout(timer)
       audio.removeEventListener('loadedmetadata', ok)
@@ -153,50 +206,59 @@ export async function apply() {
   const item = currentItem.value
   if (!r || !item) {
     unload()
+    unplayable.value = false
     readiness.value = 'idle'
     return
   }
   const local = resolveLocal(item.track)
   const localId = local.status === 'ready' ? local.local.id : null
-  const blob = localId ? await getFile(localId) : null
+  const key = `${item.track.id}>${localId}` // room song → which local file plays it
+  unplayable.value = !!localId && failedKeys.has(key)
+  const blob = localId && !unplayable.value ? await getFile(localId) : null
   if (my !== seq) return
   if (!blob) {
     if (loadedId) unload()
     readiness.value = 'missing'
     return
   }
-  const key = `${item.track.id}>${localId}` // room song → which local file plays it
   if (loadedId !== key) {
     readiness.value = 'loading'
     const ok = await loadBlob(blob)
     if (my !== seq) return
     if (!ok) {
       unload()
+      failedKeys.add(key)
+      unplayable.value = true
       readiness.value = 'missing'
-      toast("We couldn't read this audio file.", { tone: 'error' })
+      toast("We couldn't play this audio file in this browser.", { tone: 'error' })
       return
     }
     loadedId = key
   }
 
   const pb = r.playback
-  if (pb.isPlaying) {
-    const target = expected()
-    if (Math.abs(audio.currentTime - target) > prefs.value.soft) {
-      seekTo(target + seekLead)
-      judgeSeek = true
-    }
-    try {
-      await audio.play()
-      if (my === seq) readiness.value = 'ready'
-    } catch (err) {
-      if (my === seq && (err as Error).name === 'NotAllowedError') readiness.value = 'needs-tap'
-    }
-  } else {
-    audio.pause()
+  if (!pb.isPlaying) {
+    pauseAudio()
     audio.playbackRate = 1
     if (Math.abs(audio.currentTime - pb.position) > 0.05) seekTo(pb.position)
     readiness.value = 'ready'
+    return
+  }
+  const target = expected()
+  if (Math.abs(audio.currentTime - target) > prefs.value.soft) {
+    seekTo(target + seekLead)
+    judgeSeek = true
+  }
+  if (heldHere.value) { // paused from outside Earshot: stay quiet until the listener taps
+    readiness.value = 'needs-tap'
+    return
+  }
+  try {
+    await audio.play()
+    if (my === seq) readiness.value = 'ready'
+  } catch (err) {
+    // Blocked autoplay — including a hidden tab that isn't allowed to start the next song.
+    if (my === seq && (err as Error).name === 'NotAllowedError') readiness.value = 'needs-tap'
   }
 }
 
@@ -209,6 +271,13 @@ const applyKey = computed(() => {
 })
 effect(() => { applyKey.value; apply() })
 
+// Leaving or switching rooms clears anything that was specific to the old one.
+effect(() => {
+  roomCode.value
+  heldHere.value = false
+  mutedHere.value = false
+})
+
 // Drift correction loop: compare, then nudge playbackRate or hard-seek.
 function check() {
   const r = room.value
@@ -216,14 +285,7 @@ function check() {
     catchingUp.value = false
     return
   }
-  if (audio.paused && !audio.ended) return void apply() // interrupted (call, headphones…); resume
-  if (ctx && ctx.state !== 'running') {
-    // e.g. iOS interrupted the audio session: try to resume; if it stays stuck, ask for a tap
-    ctx.resume().catch(() => {})
-    if (++ctxStalled >= 3) readiness.value = 'needs-tap'
-    return
-  }
-  ctxStalled = 0
+  if (audio.paused && !audio.ended) return void apply() // our own pause/resume raced; re-apply
   if (audio.seeking || performance.now() - lastSeekAt < prefs.value.seekCooldownMs) return
   const drift = audio.currentTime - expected()
   driftMs.value = Math.round(drift * 1000)
@@ -248,15 +310,22 @@ effect(() => { clearInterval(loop); loop = setInterval(check, prefs.value.checkM
 audio.addEventListener('ended', () => {
   const r = room.value
   const item = currentItem.value
-  if (r?.playback.isPlaying && item && loadedId?.startsWith(`${item.track.id}>`)) playback({ type: 'ENDED', itemId: item.id })
+  if (!r?.playback.isPlaying || !item || !loadedId?.startsWith(`${item.track.id}>`)) return
+  // A "same song" copy can be up to 2 s shorter; don't let it cut the song short for everyone.
+  // Report the end only for the exact file, or once the room itself has reached the end.
+  const exact = loadedId === `${item.track.id}>${item.track.id}`
+  const atEnd = positionAt(r.playback, clock.serverNow()) >= (item.track.duration || 0) - 0.5
+  if (exact || atEnd) playback({ type: 'ENDED', itemId: item.id })
 })
 
 // Tab sleeping / device wake: timers were throttled and the clock may have jumped — resync.
 document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState === 'visible') ctx?.resume().catch(() => {})
-  if (document.visibilityState === 'visible' && socket.connected) {
-    await clock.sync(3)
-    apply()
+  if (document.visibilityState === 'visible') {
+    ctx?.resume().catch(() => {})
+    if (socket.connected) {
+      await clock.sync(3)
+      apply()
+    }
   }
   reportStatus()
 })
@@ -268,22 +337,56 @@ function reportStatus() {
 }
 effect(() => { readiness.value; me.value; connection.value; reportStatus() })
 
-// Lock-screen / hardware media keys.
+// ---- lock screen, notification and headset controls (Media Session) ----
 if ('mediaSession' in navigator) {
   const ms = navigator.mediaSession
-  ms.setActionHandler('play', () => playback({ type: 'PLAY' }))
-  ms.setActionHandler('pause', () => playback({ type: 'PAUSE' }))
-  ms.setActionHandler('nexttrack', () => playback({ type: 'NEXT' }))
-  ms.setActionHandler('previoustrack', () => playback({ type: 'PREVIOUS' }))
+  const set = (action: MediaSessionAction, fn: MediaSessionActionHandler | null) => {
+    try { ms.setActionHandler(action, fn) } catch { /* action not supported here */ }
+  }
+  const seekBy = (d: number) => playback({ type: 'SEEK', position: Math.max(0, roomPosition.value + d) })
+
+  effect(() => {
+    if (canControl.value) {
+      set('play', () => { if (heldHere.value || readiness.value === 'needs-tap') tuneIn(); playback({ type: 'PLAY' }) })
+      set('pause', () => playback({ type: 'PAUSE' }))
+      set('nexttrack', () => playback({ type: 'NEXT' }))
+      set('previoustrack', () => playback({ type: 'PREVIOUS' }))
+      set('seekto', d => { if (d.seekTime != null) playback({ type: 'SEEK', position: d.seekTime }) })
+      set('seekbackward', d => seekBy(-(d.seekOffset ?? 10)))
+      set('seekforward', d => seekBy(d.seekOffset ?? 10))
+    } else {
+      // Guests can't pause the room; their headset/lock-screen button mutes just this device.
+      set('play', () => { mutedHere.value = false; if (heldHere.value) tuneIn(); toast('Unmuted on this device') })
+      set('pause', () => { mutedHere.value = true; toast('Muted on this device') })
+      for (const a of ['nexttrack', 'previoustrack', 'seekto', 'seekbackward', 'seekforward'] as const) set(a, null)
+    }
+  })
+
   effect(() => {
     const t = currentItem.value?.track
-    ms.metadata = t ? new MediaMetadata({ title: t.title, artist: t.artist, album: t.album }) : null
-    ms.playbackState = room.value?.playback.isPlaying ? 'playing' : 'paused'
+    const local = t ? resolveLocal(t) : null
+    const art = local?.status === 'ready' ? artUrls.value.get(local.local.id) : undefined
+    ms.metadata = t ? new MediaMetadata({ title: t.title, artist: t.artist, album: t.album, artwork: art ? [{ src: art, sizes: '320x320', type: 'image/jpeg' }] : [] }) : null
+    ms.playbackState = room.value?.playback.isPlaying && !mutedHere.value ? 'playing' : 'paused'
   })
+
+  // Position on the lock screen: refresh on every playback change and every 5 s while playing.
+  const updatePosition = () => {
+    const r = room.value
+    const d = currentItem.value?.track.duration
+    if (!r || !d) return
+    try {
+      ms.setPositionState({ duration: d, playbackRate: 1, position: Math.min(d, Math.max(0, positionAt(r.playback, clock.serverNow()))) })
+    } catch { /* not supported */ }
+  }
+  effect(() => { applyKey.value; updatePosition() })
+  setInterval(() => { if (room.value?.playback.isPlaying) updatePosition() }, 5000)
 }
 
 // Dev-only handle for inspecting sync from the console / tests.
-if (import.meta.env.DEV) Object.assign(window, { __jam: { audio, clock, expected, driftMs, readiness, get seekLead() { return seekLead } } })
+if (import.meta.env.DEV) {
+  Object.assign(window, { __jam: { audio, clock, expected, driftMs, readiness, heldHere, getAnalyser, get seekLead() { return seekLead } } })
+}
 
 // Owns long-lived side effects (sockets, timers, <audio>); a full reload is safer than hot-swapping.
 import.meta.hot?.dispose(() => location.reload())

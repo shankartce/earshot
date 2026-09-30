@@ -113,12 +113,18 @@ load()
 
 let worker: Worker | null = null
 let chain: Promise<unknown> = Promise.resolve()
+const WORKER_TIMEOUT_MS = 90_000
 function ask(msg: WorkerReq): Promise<WorkerRes> {
-  worker ??= new Worker(new URL('./hash.worker.ts', import.meta.url), { type: 'module' })
-  const w = worker
   const run = () => new Promise<WorkerRes>(res => {
-    w.onmessage = e => res(e.data)
-    w.onerror = () => res({ ok: false })
+    const w = (worker ??= new Worker(new URL('./hash.worker.ts', import.meta.url), { type: 'module' }))
+    // A worker that dies silently (e.g. out of memory on a huge file) must not freeze every later import.
+    const timer = setTimeout(() => {
+      w.terminate()
+      if (worker === w) worker = null
+      res({ ok: false })
+    }, WORKER_TIMEOUT_MS)
+    w.onmessage = e => { clearTimeout(timer); res(e.data) }
+    w.onerror = () => { clearTimeout(timer); res({ ok: false }) }
     w.postMessage(msg)
   })
   const p = chain.then(run, run) // one request at a time keeps replies in order
@@ -150,15 +156,24 @@ const baseName = (name: string) => name.replace(/\.[^.]+$/, '').toLowerCase()
 /** tracks = every readable file from this import, in order (new ones and ones already in the library). */
 export interface ImportResult { tracks: LocalTrack[]; added: number; duplicates: number; failed: string[] }
 
-export async function importFiles(files: File[]): Promise<ImportResult> {
+// Imports run one after another: two at once (a folder drop while "Add file" is busy) used to
+// trample each other's progress and artwork.
+let importChain: Promise<unknown> = Promise.resolve()
+export function importFiles(files: File[]): Promise<ImportResult> {
+  const p = importChain.then(() => importNow(files))
+  importChain = p.catch(() => {})
+  return p
+}
+
+async function importNow(files: File[]): Promise<ImportResult> {
   const audio = files.filter(isAudioFile)
   const result: ImportResult = { tracks: [], added: 0, duplicates: 0, failed: files.filter(f => !isAudioFile(f) && !isLrc(f) && !f.name.startsWith('.')).map(f => f.name) }
   // "Song.lrc" next to "Song.mp3" (same folder drop / multi-select) becomes that song's lyrics.
   const lrcByName = new Map(files.filter(isLrc).map(f => [baseName(f.name), f]))
   if (!audio.length) return result
   navigator.storage?.persist?.().catch(() => {})
-  importing.value = { done: 0, total: audio.length }
-  const urls = new Map(artUrls.value)
+  let done = 0
+  importing.value = { done, total: audio.length }
 
   for (const file of audio) {
     try {
@@ -176,7 +191,7 @@ export async function importFiles(files: File[]): Promise<ImportResult> {
           const thumb = await thumbnail(tags.picture)
           if (thumb) {
             hasArt = true
-            urls.set(h.id, URL.createObjectURL(thumb))
+            artUrls.value = new Map(artUrls.value).set(h.id, URL.createObjectURL(thumb))
             await ask({ kind: 'store', dir: 'art', name: hexOf(h.id), blob: thumb })
           }
         }
@@ -189,15 +204,15 @@ export async function importFiles(files: File[]): Promise<ImportResult> {
         if (lrc) t.hasLyrics = await saveLyrics(t.id, lrc)
         // Publish each track as soon as it's ready so big imports feel alive.
         localTracks.value = new Map(localTracks.value).set(t.id, t)
+        save() // debounced; keeps the index in step with stored files if the page closes mid-import
         result.tracks.push(t)
         result.added++
       }
     } catch {
       result.failed.push(file.name)
     }
-    importing.value = { done: importing.value!.done + 1, total: audio.length }
+    importing.value = { done: ++done, total: audio.length }
   }
-  artUrls.value = urls
   importing.value = null
   save()
   return result

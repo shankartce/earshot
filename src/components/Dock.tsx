@@ -2,7 +2,7 @@
 // the Room / Queue / Chat / Library tabs. Lives at app level so music keeps going as you browse.
 import { useEffect } from 'preact/hooks'
 import { useLocation } from 'preact-iso'
-import { roomPosition, tuneIn, readiness } from '../audio/player.ts'
+import { heldHere, readiness, roomPosition, tuneIn, unlockAudio } from '../audio/player.ts'
 import { artUrls, resolveLocal } from '../library/library.ts'
 import { canControl, currentItem, playback, room, shownQueue } from '../state/room.ts'
 import { unread } from '../state/social.ts'
@@ -81,12 +81,15 @@ function MiniPlayer({ onOpen }: { onOpen: () => void }) {
           <span class="q-sub">{t ? (local?.status === 'ready' ? t.artist || 'Unknown artist' : 'Not on this device') : 'Nothing playing yet'}</span>
         </span>
       </button>
-      {item && (
+      {item && playing && readiness.value === 'needs-tap' ? (
+        // The room is playing but this device isn't: tapping here only starts *your* audio.
+        <button class="btn sm primary mini-listen" onClick={tuneIn}>
+          <Icon name={heldHere.value ? 'play' : 'tap'} size={16} /> {heldHere.value ? 'Resume' : 'Tap to listen'}
+        </button>
+      ) : item && (
         <button class="icon-btn mini-play" disabled={!canControl.value} aria-label={playing ? 'Pause' : 'Play'}
-          onClick={() => {
-            if (readiness.value === 'needs-tap') tuneIn()
-            playback({ type: playing ? 'PAUSE' : 'PLAY' })
-          }}>
+          title={canControl.value ? undefined : 'Only the host can control playback in this room'}
+          onClick={() => { unlockAudio(); playback({ type: playing ? 'PAUSE' : 'PLAY' }) }}>
           <Icon name={playing ? 'pause' : 'play'} size={24} />
         </button>
       )}

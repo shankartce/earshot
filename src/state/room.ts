@@ -67,10 +67,14 @@ export async function joinRoom(code: string, p: Profile) {
 
 export const peekRoom = (code: string) => request<RoomPeek>('room:peek', code)
 
+/** The current room's code; changes only when you enter or leave a room (per-room state resets on it). */
+export const roomCode = computed(() => room.value?.code ?? null)
+
 export function leaveRoom() {
   socket.emit('room:leave')
   room.value = null
   me.value = ''
+  pendingQueue.value = null
 }
 
 async function command(event: 'playback:command' | 'queue:command' | 'room:settings', payload: object) {
@@ -81,8 +85,16 @@ async function command(event: 'playback:command' | 'queue:command' | 'room:setti
 }
 
 type WithoutVersion<T> = T extends unknown ? Omit<T, 'baseVersion'> : never
-export const playback = (cmd: WithoutVersion<PlaybackCommand>) =>
-  command('playback:command', { ...cmd, baseVersion: room.value?.playback.version ?? 0 })
+
+// Playback commands go out one at a time and read the version when *sent*, so a quick double-tap
+// on Next (or repeated J/L) applies twice instead of the second being dropped as "stale".
+let playChain: Promise<unknown> = Promise.resolve()
+export function playback(cmd: WithoutVersion<PlaybackCommand>) {
+  const send = () => command('playback:command', { ...cmd, baseVersion: room.value?.playback.version ?? 0 })
+  const p = playChain.then(send, send)
+  playChain = p
+  return p
+}
 
 // ---- queue with optimistic updates ----
 // Edits show instantly (predicted with the server's own reducer), then the server's answer replaces
@@ -123,13 +135,17 @@ socket.on('presence:joined', p => toast(`${p.displayName} joined the room`, { wh
 socket.on('presence:left', p => toast(`${p.displayName} left the room`, { who: p }))
 
 socket.on('connect', async () => {
-  connection.value = 'online'
-  await clock.sync()
-  // Reconnect: take the latest state; the player then re-derives position and resynchronizes.
+  await clock.sync(5, true)
+  // Reconnect: rejoin *before* announcing we're online, so everything that reacts to "online"
+  // (share offers, readiness) reaches a socket that's actually in the room again.
   if (room.value && profile.value) {
     const r = await joinRoom(room.value.code, profile.value)
-    if (!r.ok) toast(r.error, { tone: 'error' })
+    if (!r.ok) {
+      toast(r.error, { tone: 'error' })
+      room.value = null // don't leave a room that looks live but where every button fails
+    }
   }
+  connection.value = 'online'
 })
 socket.on('disconnect', () => { connection.value = 'reconnecting' })
 socket.io.on('reconnect_attempt', () => { connection.value = 'reconnecting' })

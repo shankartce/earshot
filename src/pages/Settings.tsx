@@ -42,7 +42,7 @@ export function Settings() {
           hint="Plays this much earlier to make up for Bluetooth or wireless speaker lag."
           onChange={v => setPrefs({ outputLatencyMs: v })} />
         <Num label="Ignore drift below" unit="ms" min={10} max={200} step={10} value={Math.round(d.ignore * 1000)}
-          hint="Smaller differences than this are left alone." onChange={v => setPrefs({ ignore: v / 1000 })} />
+          hint="Smaller differences than this are left alone." onChange={v => setPrefs({ ignore: Math.min(v / 1000, d.soft - 0.02) })} />
         <Num label="Jump when drift exceeds" unit="ms" min={100} max={1000} step={25} value={Math.round(d.soft * 1000)}
           hint="Between the two, playback speed is nudged gently instead of jumping."
           onChange={v => setPrefs({ soft: Math.max(v / 1000, d.ignore + 0.02) })} />
