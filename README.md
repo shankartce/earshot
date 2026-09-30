@@ -9,7 +9,7 @@ Everyone plays their **own** copy of each song, and your music is never uploaded
 
 [![MIT License](https://img.shields.io/badge/license-MIT-ff7a59.svg)](LICENSE)
 ![Node 22.18+](https://img.shields.io/badge/node-%E2%89%A522.18-ffb454.svg)
-![Tests](https://img.shields.io/badge/tests-83%20passing-7ccf6a.svg)
+![Tests](https://img.shields.io/badge/tests-88%20passing-7ccf6a.svg)
 ![Built with Preact + Socket.IO](https://img.shields.io/badge/built%20with-Preact%20%2B%20Socket.IO-b388ff.svg)
 
 ### **▶ [Try it live: earshot-30yv.onrender.com](https://earshot-30yv.onrender.com)**
@@ -44,7 +44,7 @@ Unlike streaming services, Earshot doesn't stream anything. **Each person plays 
 | 🌈 **Visualizers** | Ring, bars, waveform or glow, driven by your own audio and computed only on your device. |
 | 🎤 **Synced lyrics** | Add a `.lrc` lyrics file and the lines light up in time with the room. |
 | 👑 **Host controls** | Choose who can control playback or edit the queue, and turn chat or reactions on or off. |
-| 📱 **Great on phones** | Bottom tabs, a mini-player that follows you around, and big touch-friendly controls. |
+| 📱 **Great on phones** | Install it like an app, keep listening with the screen locked, and use lock-screen controls. Bottom tabs, a mini-player that follows you around, and big touch-friendly controls. |
 
 <div align="center">
 <img src="docs/screenshots/landing.jpg" alt="Earshot home page: Come listen with me" width="560"><br><br>
@@ -114,6 +114,9 @@ Whoever creates the room is the host (👑). In **⚙ Room settings** the host c
 
 If the host leaves, hosting passes to whoever has been in the room longest.
 
+### Install it like an app
+In Chrome, Edge or Android, use **Install** in the address bar or menu. On iPhone, tap **Share → Add to Home Screen**. Earshot then opens full-screen with its own icon, and music keeps playing with the screen locked. If you unplug your headphones or take a call, it pauses on your device only and waits for you to tap **Resume listening**.
+
 ### Coming back later
 Rooms are remembered for 7 days. The home page shows **Jump back in**, which returns you to your rooms as the same person, with the queue and chat where you left them.
 
@@ -133,7 +136,7 @@ No. There's no upload feature at all, and nothing is ever sent to Earshot's serv
 <details>
 <summary><b>Can a friend get a song from me?</b></summary>
 
-Only for music you have the right to share: your own recordings, or songs under Creative Commons or in the public domain. Open the song's **⋯** menu and choose **Let friends get a copy…**, pick the licence, and confirm you have the right to share it. Friends missing that song then see **Get a copy**, and the file goes straight from your browser to theirs. It never passes through Earshot's server, it's checked to be the exact same file, and it disappears from their device when they leave.
+Only for music you have the right to share: your own recordings, or songs under Creative Commons or in the public domain. Open the song's **⋯** menu and choose **Let friends get a copy…**, pick the licence, and confirm you have the right to share it. Friends missing that song get it automatically in the background (or tap **Get a copy**), straight from your browser to theirs. It never passes through Earshot's server, it's checked to be the exact same file, and it stays in their library under **Shared with me**, labelled with who shared it and the licence.
 
 **Sharing policy:** don't share songs you bought, streamed or ripped from CDs; that's copyright infringement in most countries. Earshot can't verify licences; the person sharing is responsible. Direct connections don't work on every network (some mobile carriers and office networks block them).
 </details>
@@ -205,7 +208,7 @@ npm start          # serves the app + realtime server on $PORT (default 3000)
 
 ```bash
 npm run dev         # app + realtime server in one process (http://localhost:5173)
-npm test            # 83 unit + multi-client integration tests (Vitest)
+npm test            # 88 unit + multi-client integration tests (Vitest)
 npm run typecheck   # TypeScript
 npm run build       # production client → dist/
 npm start           # production server (serves dist/)

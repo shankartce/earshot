@@ -84,3 +84,8 @@ function App() {
 }
 
 render(<App />, document.getElementById('app')!)
+
+// Installable app + instant start (production only; the dev server has its own reloading).
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}))
+}
