@@ -1,5 +1,7 @@
 import { Icon } from '../components/icons.tsx'
 import { Equalizer } from '../components/ui.tsx'
+import { forgetRoom, recentRooms } from '../state/profile.ts'
+import { room } from '../state/room.ts'
 
 export function Landing() {
   return (
@@ -25,6 +27,8 @@ export function Landing() {
         </div>
       </section>
 
+      <RecentRooms />
+
       <section class="steps" aria-label="How it works">
         {[
           ['1', 'Open a room', 'Pick a name and a vibe. You get a short code to share.'],
@@ -43,5 +47,35 @@ export function Landing() {
         <Icon name="check" size={16} /> Your audio never leaves your device. Rooms share only song details and play state.
       </p>
     </main>
+  )
+}
+
+/** "Resume this room": rooms you've been in on this device (your seat is kept by a private token). */
+function RecentRooms() {
+  const rooms = recentRooms.value
+  if (!rooms.length) return null
+  const ago = (t: number) => {
+    const m = Math.round((Date.now() - t) / 60000)
+    return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`
+  }
+  return (
+    <section class="recent-rooms" aria-labelledby="recent-h">
+      <h2 id="recent-h" class="section-h">Jump back in</h2>
+      <ul role="list">
+        {rooms.map(r => (
+          <li key={r.code} class="recent-room">
+            <a href={`/room/${r.code}`} class="recent-link">
+              <span class="room-emoji" aria-hidden="true">{r.emoji}</span>
+              <span class="q-text">
+                <span class="q-title">{r.name}</span>
+                <span class="q-sub">{room.value?.code === r.code ? 'You’re in this room' : `${r.code} · ${ago(r.at)}`}</span>
+              </span>
+              <span class="btn sm">{room.value?.code === r.code ? 'Open' : 'Resume'}</span>
+            </a>
+            <button class="icon-btn sm" aria-label={`Forget ${r.name}`} onClick={() => forgetRoom(r.code)}><Icon name="close" size={16} /></button>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }

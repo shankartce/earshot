@@ -138,6 +138,7 @@ export function Queue() {
             })}
           </ol>
         )}
+        <RecentlyPlayed />
       </section>
 
       {menu && <ItemMenu item={menu} onClose={() => setMenu(null)} />}
@@ -176,5 +177,31 @@ function ItemMenu({ item, onClose }: { item: QueueItem; onClose: () => void }) {
         {!edit && !canRemove && <p class="muted small">Only the host can rearrange this room's queue.</p>}
       </div>
     </Sheet>
+  )
+}
+
+/** Songs this room played before (kept with the room, so it's there when friends come back). */
+function RecentlyPlayed() {
+  const r = room.value
+  const currentTrack = r?.queue.items.find(i => i.id === r.playback.itemId)?.track.id
+  const history = (r?.history ?? []).filter(t => t.id !== currentTrack)
+  if (!history.length) return null
+  return (
+    <details class="recent">
+      <summary>Recently played <span class="count">{history.length}</span></summary>
+      <ul class="queue-list" role="list">
+        {history.map(t => (
+          <li key={t.id} class="q-item">
+            <div class="q-main">
+              <span class="q-art"><Cover id={t.id} size={36} /></span>
+              <span class="q-text"><span class="q-title">{t.title}</span><span class="q-sub">{t.artist || 'Unknown artist'}</span></span>
+              <span class="q-side"><Availability track={t} /></span>
+            </div>
+            <button class="icon-btn sm" aria-label={`Add ${t.title} to the queue again`} title="Add again"
+              onClick={() => queue({ type: 'ADD', tracks: [t] })}><Icon name="plus" size={16} /></button>
+          </li>
+        ))}
+      </ul>
+    </details>
   )
 }

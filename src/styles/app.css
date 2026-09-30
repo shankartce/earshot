@@ -588,6 +588,20 @@ body[data-dock='both'] { --dock-h: 134px; }
   .stage { padding-top: 4px; gap: 14px; }
 }
 
+/* ============ phase 6 ============ */
+.recent-rooms { max-width: 560px; margin: 40px auto 0; animation: page-in 900ms var(--ease); }
+.recent-rooms ul { display: grid; gap: 8px; }
+.recent-room { display: flex; align-items: center; gap: 4px; border-radius: var(--radius); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); padding-right: 6px; }
+.recent-link { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 10px 12px; text-decoration: none; border-radius: var(--radius); }
+.recent-link:hover .btn { background: var(--surface-hover); }
+.recent-link .room-emoji { width: 42px; height: 42px; font-size: 22px; border-radius: 13px; }
+.recent { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.recent summary { cursor: pointer; font: 600 14px var(--font-display); color: var(--text-muted); display: flex; align-items: center; gap: 8px; list-style: none; padding: 4px 2px; border-radius: 8px; }
+.recent summary::-webkit-details-marker { display: none; }
+.recent summary::before { content: '▸'; transition: transform var(--dur); }
+.recent[open] summary::before { transform: rotate(90deg); }
+.recent .queue-list { margin-top: 6px; }
+
 .shortcuts { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 0; font-size: 14px; }
 .shortcuts dt { color: var(--text); }
 .shortcuts dd { margin: 0; color: var(--text-muted); }
