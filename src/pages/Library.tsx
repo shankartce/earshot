@@ -6,11 +6,12 @@ import { Icon } from '../components/icons.tsx'
 import { ConfirmButton, Cover, DropZone, Empty, FileButton } from '../components/ui.tsx'
 import {
   addToPlaylist, artUrls, createPlaylist, deletePlaylist, importFiles, importing, libraryReady, localTracks, lostTracks,
-  persistentStorage, storagePersisted, playlists, removeTrack, sortedTracks, storageUsage, updatePlaylist, type LocalTrack, type Playlist,
+  ownTracks, persistentStorage, storagePersisted, playlists, removeTrack, sharedWithMe, sortedTracks, storageUsage, updatePlaylist, type LocalTrack, type Playlist,
 } from '../library/library.ts'
 import { queueTracks, reportImport } from '../state/actions.ts'
 import { room, toast } from '../state/room.ts'
 import { fmtTime } from '../utils/format.ts'
+import { LICENSE_URLS, LICENSES } from '../../shared/types.ts'
 import { ShareSheet, SharedBadge } from '../components/ShareSheet.tsx'
 import { BackLink } from './Join.tsx'
 
@@ -33,7 +34,7 @@ async function onImport(files: File[]) {
 }
 
 export function Library() {
-  const [tab, setTab] = useState<'songs' | 'playlists'>('songs')
+  const [tab, setTab] = useState<'songs' | 'shared' | 'playlists'>('songs')
   const [usage, setUsage] = useState<{ used: number; quota: number } | null>(null)
   const count = sortedTracks.value.length
   useEffect(() => { storageUsage().then(setUsage) }, [count])
@@ -75,13 +76,16 @@ export function Library() {
 
         <div class="segmented tabs" role="tablist" aria-label="Library sections" onKeyDown={tabKeys}>
           <button role="tab" aria-selected={tab === 'songs'} class={tab === 'songs' ? 'on' : ''} onClick={() => setTab('songs')}>Songs</button>
+          <button role="tab" aria-selected={tab === 'shared'} class={tab === 'shared' ? 'on' : ''} onClick={() => setTab('shared')}>
+            Shared with me {sharedWithMe.value.length > 0 && <span class="count">{sharedWithMe.value.length}</span>}
+          </button>
           <button role="tab" aria-selected={tab === 'playlists'} class={tab === 'playlists' ? 'on' : ''} onClick={() => setTab('playlists')}>
             Playlists {playlists.value.length > 0 && <span class="count">{playlists.value.length}</span>}
           </button>
         </div>
 
         {!libraryReady.value ? <p class="muted pulse">Opening your library…</p>
-          : tab === 'songs' ? <Songs /> : <Playlists />}
+          : tab === 'songs' ? <Songs /> : tab === 'shared' ? <SharedWithMe /> : <Playlists />}
       </div>
     </DropZone>
   )
@@ -90,14 +94,14 @@ export function Library() {
 function Songs() {
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<Sort>('recent')
-  if (!sortedTracks.value.length) {
+  if (!ownTracks.value.length) {
     return (
       <Empty icon="music" title="Your local library is empty.">
         <p>Add some music to get started — drop files or a whole folder anywhere on this page.</p>
       </Empty>
     )
   }
-  const shown = sortedTracks.value.filter(t => matchesSearch(t, q)).sort(SORTS[sort])
+  const shown = ownTracks.value.filter(t => matchesSearch(t, q)).sort(SORTS[sort])
   return (
     <>
       <div class="lib-tools">
@@ -230,5 +234,49 @@ function PlaylistRow({ p, open, onToggle }: { p: Playlist; open: boolean; onTogg
         </ol>
       )}
     </li>
+  )
+}
+
+/** Songs friends sent you after attesting they may share them. The licence travels with the song. */
+function SharedWithMe() {
+  const tracks = sharedWithMe.value
+  if (!tracks.length) {
+    return (
+      <Empty icon="download" title="Nothing shared with you yet.">
+        <p>When a friend lets the room get a copy of their own or openly licensed music, it lands here — and stays.</p>
+      </Empty>
+    )
+  }
+  return (
+    <ul class="lib-list" role="list">
+      {tracks.map(t => {
+        const s = t.sharedBy!
+        const url = LICENSE_URLS[s.license]
+        return (
+          <li key={t.id} class="lib-row">
+            <Cover id={t.id} size={46} />
+            <span class="q-text">
+              <span class="q-title">{t.title}</span>
+              <span class="q-sub">{t.artist || 'Unknown artist'}</span>
+              <span class="avail shared">
+                Shared by {s.name} · {url ? <a href={url} target="_blank" rel="noopener noreferrer">{LICENSES[s.license]}</a> : LICENSES[s.license]}
+              </span>
+            </span>
+            <span class="q-dur">{fmtTime(t.duration)}</span>
+            <div class="lib-actions">
+              {room.value && (
+                <button class="icon-btn sm" aria-label={`Add ${t.title} to the room queue`} title="Add to queue" onClick={() => queueTracks([t])}>
+                  <Icon name="plus" size={18} />
+                </button>
+              )}
+              <ConfirmButton class="icon-btn sm" label={`Remove ${t.title} from this device`} confirmLabel="Remove?"
+                onConfirm={() => { removeTrack(t.id); toast(`Removed “${t.title}”`) }}>
+                <Icon name="trash" size={17} />
+              </ConfirmButton>
+            </div>
+          </li>
+        )
+      })}
+    </ul>
   )
 }

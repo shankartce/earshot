@@ -14,8 +14,8 @@ export function ShareSheet({ track, onClose }: { track: LocalTrack; onClose: () 
   return (
     <Sheet open onClose={onClose} title="Let friends get a copy">
       <p class="muted">
-        Friends in the room who don't have <strong>“{track.title}”</strong> will be able to get a temporary copy straight from
-        your browser. It isn't uploaded to Earshot, and it disappears from their device when they leave.
+        Friends in the room who don't have <strong>“{track.title}”</strong> will get a copy straight from your browser and
+        can keep it in their library. It never passes through Earshot's server.
       </p>
       <div class="note share-warn">
         <Icon name="warn" size={16} />
@@ -30,7 +30,7 @@ export function ShareSheet({ track, onClose }: { track: LocalTrack; onClose: () 
       </label>
       <label class="check-row">
         <input type="checkbox" checked={attested} disabled={!license} onChange={e => setAttested(e.currentTarget.checked)} />
-        <span>I have the right to share this recording, and I take responsibility for sharing it.</span>
+        <span>I have the right to share this recording, friends may keep a copy, and I take responsibility for sharing it.</span>
       </label>
       <div class="row share-actions">
         {track.share && (

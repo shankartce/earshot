@@ -3,7 +3,7 @@
 // the device. Sync access handles only exist in workers, and they're the one OPFS write API every
 // target browser supports.
 
-export type WorkerReq = { kind: 'audio'; file: File } | { kind: 'store'; dir: 'art' | 'lyrics'; name: string; blob: Blob }
+export type WorkerReq = { kind: 'audio'; file: Blob } | { kind: 'store'; dir: 'art' | 'lyrics'; name: string; blob: Blob }
 export type WorkerRes = { ok: true; id: string; stored: boolean } | { ok: false }
 
 async function store(dirName: string, name: string, buf: ArrayBuffer): Promise<boolean> {

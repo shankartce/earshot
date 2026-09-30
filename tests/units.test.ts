@@ -7,7 +7,7 @@ import { Clock, estimate, shouldAccept } from '../src/sync/clock.ts'
 import { DEFAULT_DRIFT, decide, learnSeekLead } from '../src/sync/drift.ts'
 import { groupMessages, typingText } from '../src/utils/chat.ts'
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts'
-import { assembleVerified, chunkRanges, parseHeader, sha256Id } from '../src/share/transfer.ts'
+import { afterFailure, assembleVerified, chunkRanges, parseHeader, planFetch, sha256Id } from '../src/share/transfer.ts'
 
 const HASH = 'sha256:' + 'a'.repeat(64)
 
@@ -187,6 +187,37 @@ describe('p2p sharing: validation and transfer', () => {
     const corrupted = parts.map((p, i) => (i === 2 ? new Uint8Array(p).map(x => x ^ 1).buffer : p))
     expect(await assembleVerified(corrupted, header)).toBeNull()
     expect(await assembleVerified(parts.slice(1), header)).toBeNull()
+  })
+})
+
+describe('auto-fetch planning', () => {
+  const q = ['a', 'b', 'c', 'd']
+  const base = { queue: q, currentIndex: 2, have: () => false, offers: () => ['alex'], memo: new Map(), now: 0 }
+
+  it('current song first, then upcoming, then earlier ones', () => {
+    expect(planFetch(base)).toEqual({ trackId: 'c', from: 'alex' })
+    expect(planFetch({ ...base, have: id => id === 'c' })!.trackId).toBe('d')
+    expect(planFetch({ ...base, have: id => id === 'c' || id === 'd' })!.trackId).toBe('a')
+    expect(planFetch({ ...base, currentIndex: -1 })!.trackId).toBe('a')
+  })
+
+  it('skips songs nobody offers, songs in backoff, and songs that failed too often', () => {
+    expect(planFetch({ ...base, offers: id => (id === 'b' ? ['sam'] : []) })).toEqual({ trackId: 'b', from: 'sam' })
+    const m1 = afterFailure(undefined, 'alex', 0) // retry in 15 s
+    expect(m1).toMatchObject({ attempts: 1, nextAt: 15_000, lastPeer: 'alex' })
+    expect(planFetch({ ...base, memo: new Map([['c', m1]]), now: 1000 })!.trackId).toBe('d')
+    expect(planFetch({ ...base, memo: new Map([['c', m1]]), now: 15_000 })!.trackId).toBe('c')
+    let m = m1
+    m = afterFailure(m, 'alex', 0)
+    m = afterFailure(m, 'alex', 0)
+    expect(m.attempts).toBe(3)
+    expect(planFetch({ ...base, memo: new Map([['c', m]]), now: 1e9 })!.trackId).toBe('d') // gave up on c
+  })
+
+  it('after a failure, tries a different sharer if there is one', () => {
+    const memo = new Map([['c', { attempts: 1, nextAt: 0, lastPeer: 'alex' }]])
+    expect(planFetch({ ...base, offers: () => ['alex', 'sam'], memo, now: 1 })).toEqual({ trackId: 'c', from: 'sam' })
+    expect(planFetch({ ...base, offers: () => ['alex'], memo, now: 1 })).toEqual({ trackId: 'c', from: 'alex' })
   })
 })
 

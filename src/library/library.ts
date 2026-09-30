@@ -3,7 +3,7 @@
 // Nothing here is ever sent to the server except Track metadata (hash id, title, artist, album, duration).
 import { computed, signal } from '@preact/signals'
 import type { License, Track } from '../../shared/types.ts'
-import { read, write } from '../state/profile.ts'
+import { isDemoTab, read, write } from '../state/profile.ts'
 import type { WorkerReq, WorkerRes } from './hash.worker.ts'
 import { resolve, type Resolution } from './match.ts'
 import { readTags, thumbnail } from './metadata.ts'
@@ -18,9 +18,11 @@ export interface LocalTrack extends Track {
   hasLyrics?: boolean
   /** You attested you may share this exact file with friends (own work / openly licensed). */
   share?: { license: License; attestedAt: number }
-  /** A temporary copy received from a friend: memory-only, never saved, never re-shared. */
-  borrowed?: boolean
+  /** Received from a friend who attested they may share it; kept in "Shared with me", never re-shared. */
+  sharedBy?: SharedBy
 }
+
+export interface SharedBy { name: string; license: License; at: number }
 
 export interface Playlist { id: string; name: string; trackIds: string[]; createdAt: number }
 
@@ -38,8 +40,10 @@ export const libraryReady = signal(false)
 /** false when the browser won't let us keep files (e.g. private browsing) — they last for this visit only */
 export const persistentStorage = signal(true)
 
-/** Your own library (borrowed copies are temporary and not part of it). */
-export const sortedTracks = computed(() => [...localTracks.value.values()].filter(t => !t.borrowed).sort((a, b) => b.addedAt - a.addedAt))
+/** Everything you can play here, newest first: your own songs and ones friends shared with you. */
+export const sortedTracks = computed(() => [...localTracks.value.values()].sort((a, b) => b.addedAt - a.addedAt))
+export const ownTracks = computed(() => sortedTracks.value.filter(t => !t.sharedBy))
+export const sharedWithMe = computed(() => sortedTracks.value.filter(t => t.sharedBy))
 
 const KEY = 'jam:library'
 const memory = new Map<string, Blob>() // files we couldn't store on disk (this visit only)
@@ -56,7 +60,7 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined
 function save() {
   clearTimeout(saveTimer)
   saveTimer = setTimeout(() => write(KEY, {
-    v: 1, tracks: [...localTracks.value.values()].filter(t => !t.borrowed), playlists: playlists.value, aliases: aliases.value,
+    v: 1, tracks: [...localTracks.value.values()], playlists: playlists.value, aliases: aliases.value,
   } satisfies SavedLibrary), 250)
 }
 
@@ -265,20 +269,28 @@ export const toTrack = ({ id, title, artist, album, duration }: LocalTrack): Tra
 /** Record (or clear) your attestation that you may share this file. */
 export function setShare(localId: string, license: License | null) {
   const t = localTracks.value.get(localId)
-  if (!t || t.borrowed) return
+  if (!t || t.sharedBy) return
   const { share: _old, ...rest } = t
   localTracks.value = new Map(localTracks.value).set(localId, license ? { ...rest, share: { license, attestedAt: Date.now() } } : rest)
   save()
 }
 
-/** Keep a verified copy a friend sent, for this visit only (never written to disk or the library). */
-export function addBorrowed(track: Track, blob: Blob) {
-  memory.set(track.id, blob)
+/**
+ * Keep a verified copy a friend shared (they attested it's their own or openly licensed, and that
+ * friends may keep it). Stored like your own files, listed under "Shared with me".
+ */
+export async function keepShared(track: Track, blob: Blob, sharedBy: SharedBy) {
   if (localTracks.value.has(track.id)) return
+  const r = await ask({ kind: 'audio', file: blob })
+  if (!r.ok || !r.stored) { // storage refused (e.g. private browsing): playable for this visit only
+    memory.set(track.id, blob)
+    if (r.ok) persistentStorage.value = false
+  }
   const t: LocalTrack = {
-    ...track, albumArtist: '', trackNo: null, fileName: '', size: blob.size, addedAt: Date.now(), hasArt: false, borrowed: true,
+    ...track, albumArtist: '', trackNo: null, fileName: '', size: blob.size, addedAt: Date.now(), hasArt: false, sharedBy,
   }
   localTracks.value = new Map(localTracks.value).set(track.id, t)
+  save()
 }
 
 export function confirmMatch(roomTrackId: string, localId: string) {
@@ -307,6 +319,9 @@ export async function removeTrack(id: string) {
   }
   memory.delete(id)
   save()
+  // Demo tabs are separate "people" sharing one browser's content-addressed storage: another tab's
+  // library may use the same file, so a demo tab only removes the song from its own list.
+  if (isDemoTab) return
   for (const d of ['audio', 'art', 'lyrics'] as const) {
     try { await (await dir(d)).removeEntry(hexOf(id)) } catch { /* already gone */ }
   }

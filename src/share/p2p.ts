@@ -1,13 +1,14 @@
 // Peer-to-peer sharing of songs a listener attested they may share (own work / openly licensed).
 // The server only relays the WebRTC handshake; file bytes go browser → browser over a DataChannel,
-// are verified against the song's SHA-256, and are kept in memory only on the receiving side.
+// are verified against the song's SHA-256, and are then kept in the receiver's "Shared with me".
+// Missing shared songs are fetched automatically in the background, one at a time.
 import { effect, signal } from '@preact/signals'
 import type { Signal } from '../../shared/events.ts'
 import type { License, Track } from '../../shared/types.ts'
-import { addBorrowed, getFile, localTracks } from '../library/library.ts'
+import { getFile, keepShared, localTracks, resolveLocal } from '../library/library.ts'
 import { socket } from '../realtime/socket.ts'
-import { connection, me, participantById, room, toast } from '../state/room.ts'
-import { assembleVerified, chunkRanges, MAX_SIZE, parseHeader, type Header } from './transfer.ts'
+import { connection, currentItem, me, participantById, room, roomCode, toast } from '../state/room.ts'
+import { afterFailure, assembleVerified, chunkRanges, MAX_SIZE, parseHeader, planFetch, type FetchMemo, type Header } from './transfer.ts'
 
 // Public STUN only helps two browsers find each other. There is deliberately no TURN relay:
 // that would route the audio through a server.
@@ -18,12 +19,21 @@ const HIGH_WATER = 4 * 1024 * 1024
 const LOW_WATER = 1024 * 1024
 
 export type Receive =
-  | { state: 'connecting' | 'receiving' | 'verifying'; progress: number; from: string }
-  | { state: 'done'; progress: 1; from: string }
-  | { state: 'failed'; progress: number; from: string; error: string }
+  | { state: 'connecting' | 'receiving' | 'verifying'; progress: number; from: string; auto: boolean }
+  | { state: 'done'; progress: 1; from: string; auto: boolean }
+  | { state: 'failed'; progress: number; from: string; auto: boolean; error: string }
 
 /** Progress of copies you're receiving, by room trackId. */
 export const receiving = signal<Record<string, Receive>>({})
+export const isActive = (r?: Receive) => !!r && r.state !== 'failed' && r.state !== 'done'
+
+// ---- preference: fetch shared songs automatically (default on) ----
+const readAuto = () => { try { return localStorage.getItem('jam:autofetch') !== 'off' } catch { return true } }
+export const autoFetch = signal(readAuto())
+export function setAutoFetch(on: boolean) {
+  autoFetch.value = on
+  try { localStorage.setItem('jam:autofetch', on ? 'on' : 'off') } catch { /* ignore */ }
+}
 
 interface Session {
   role: 'send' | 'receive'
@@ -38,9 +48,15 @@ let activeSends = 0
 
 const send = (to: string, data: Signal) => socket.emit('rtc:signal', { to, data })
 const nameOf = (pid: string) => participantById(pid)?.displayName ?? 'your friend'
+const cantConnect = (pid: string) => `Couldn't connect directly to ${nameOf(pid)}'s device — some networks block direct connections.`
 
 function setReceive(trackId: string, r: Receive) {
   receiving.value = { ...receiving.value, [trackId]: r }
+}
+
+function setTimer(s: Session, ms: number, fn: () => void) {
+  clearTimeout(s.timer)
+  s.timer = setTimeout(fn, ms)
 }
 
 function close(id: string) {
@@ -56,8 +72,9 @@ function failReceive(id: string, error: string) {
   const s = sessions.get(id)
   if (!s || s.role !== 'receive') return
   const cur = receiving.value[s.trackId]
-  setReceive(s.trackId, { state: 'failed', progress: cur?.progress ?? 0, from: s.peer, error })
+  setReceive(s.trackId, { state: 'failed', progress: cur?.progress ?? 0, from: s.peer, auto: cur?.auto ?? false, error })
   close(id)
+  finished(s.trackId, false, s.peer)
 }
 
 function newPeer(id: string, s: Session) {
@@ -69,8 +86,8 @@ function newPeer(id: string, s: Session) {
     send(s.peer, { type: 'ice', transferId: id, candidate: { candidate: c.candidate ?? '', sdpMid: c.sdpMid ?? null, sdpMLineIndex: c.sdpMLineIndex ?? null } })
   }
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState !== 'failed') return
-    if (s.role === 'receive') failReceive(id, `Couldn't connect directly to ${nameOf(s.peer)}'s device — some networks block direct connections.`)
+    if (pc.connectionState !== 'failed' && pc.connectionState !== 'closed') return
+    if (s.role === 'receive') failReceive(id, cantConnect(s.peer))
     else close(id)
   }
   return pc
@@ -82,17 +99,16 @@ async function flushIce(s: Session) {
 
 // ---------- receiving ----------
 
-/** Ask a friend who offers this exact song for a temporary copy. */
-export function requestCopy(track: Track, from: string) {
-  const busy = receiving.value[track.id]
-  if (busy && busy.state !== 'failed' && busy.state !== 'done') return
+/** Ask a friend who offers this exact song for a copy. */
+export function requestCopy(track: Track, from: string, auto = false) {
+  if (isActive(receiving.value[track.id])) return
   const id = crypto.randomUUID()
   const s: Session = { role: 'receive', peer: from, trackId: track.id, pendingIce: [] }
-  s.timer = setTimeout(() => {
-    if (receiving.value[track.id]?.state === 'connecting') failReceive(id, `Couldn't connect directly to ${nameOf(from)}'s device — some networks block direct connections.`)
-  }, CONNECT_TIMEOUT_MS)
   sessions.set(id, s)
-  setReceive(track.id, { state: 'connecting', progress: 0, from })
+  setTimer(s, CONNECT_TIMEOUT_MS, () => {
+    if (receiving.value[track.id]?.state === 'connecting') failReceive(id, cantConnect(from))
+  })
+  setReceive(track.id, { state: 'connecting', progress: 0, from, auto })
   send(from, { type: 'request', transferId: id, trackId: track.id })
 }
 
@@ -102,43 +118,54 @@ function receiveOn(id: string, s: Session, dc: RTCDataChannel) {
   const parts: ArrayBuffer[] = []
   let got = 0
   let lastShown = 0
+  const auto = () => receiving.value[s.trackId]?.auto ?? false
   dc.onmessage = async e => {
     if (!header) {
       header = typeof e.data === 'string' ? parseHeader(e.data) : null
       if (!header || header.trackId !== s.trackId) return failReceive(id, "That wasn't the song we asked for.")
-      clearTimeout(s.timer)
-      setReceive(s.trackId, { state: 'receiving', progress: 0, from: s.peer })
+      // Stalled mid-transfer (sender's tab closed, network gone): give up after a quiet minute.
+      setTimer(s, 60_000, () => failReceive(id, 'The transfer stalled. Please try again.'))
+      setReceive(s.trackId, { state: 'receiving', progress: 0, from: s.peer, auto: auto() })
       return
     }
     if (!(e.data instanceof ArrayBuffer)) return
     parts.push(e.data)
     got += e.data.byteLength
+    setTimer(s, 60_000, () => failReceive(id, 'The transfer stalled. Please try again.'))
     if (got > header.size) return failReceive(id, 'The transfer went wrong. Please try again.')
     if (got - lastShown > header.size / 50 || got === header.size) {
       lastShown = got
-      setReceive(s.trackId, { state: 'receiving', progress: got / header.size, from: s.peer })
+      setReceive(s.trackId, { state: 'receiving', progress: got / header.size, from: s.peer, auto: auto() })
     }
     if (got < header.size) return
-    setReceive(s.trackId, { state: 'verifying', progress: 1, from: s.peer })
-    const blob = await assembleVerified(parts, header)
+    clearTimeout(s.timer)
+    setReceive(s.trackId, { state: 'verifying', progress: 1, from: s.peer, auto: auto() })
+    let blob: Blob | null = null
+    try {
+      blob = await assembleVerified(parts, header)
+    } catch {
+      return failReceive(id, "Couldn't check the copy on this device (it may be too large). Please try again.")
+    }
     if (!blob) return failReceive(id, "The copy didn't match this song, so it was discarded.")
     const item = room.value?.queue.items.find(i => i.track.id === s.trackId)
-    addBorrowed(item?.track ?? { id: s.trackId, title: 'Shared song', artist: '', album: '', duration: 0 }, blob)
-    setReceive(s.trackId, { state: 'done', progress: 1, from: s.peer })
-    toast("You're ready — syncing with the room…")
+    const track = item?.track ?? { id: s.trackId, title: 'Shared song', artist: '', album: '', duration: 0 }
+    await keepShared(track, blob, { name: nameOf(s.peer), license: header.license, at: Date.now() })
+    setReceive(s.trackId, { state: 'done', progress: 1, from: s.peer, auto: auto() })
+    if (currentItem.value?.track.id === s.trackId) toast("You're ready — syncing with the room…")
     close(id)
+    finished(s.trackId, true, s.peer)
   }
   dc.onclose = () => {
-    if (sessions.has(id) && receiving.value[s.trackId]?.state === 'receiving') failReceive(id, 'The connection dropped. Please try again.')
+    if (sessions.has(id) && isActive(receiving.value[s.trackId])) failReceive(id, 'The connection dropped. Please try again.')
   }
 }
 
 // ---------- sending ----------
 
-/** A local, non-borrowed copy of this exact file that you attested you may share. */
+/** Your own (not received) copy of this exact file, which you attested you may share. */
 function shareable(trackId: string) {
   const t = localTracks.value.get(trackId)
-  return t && !t.borrowed && t.share ? t : null
+  return t && !t.sharedBy && t.share ? t : null
 }
 
 async function sendFile(id: string, s: Session, dc: RTCDataChannel, blob: Blob, license: License) {
@@ -149,8 +176,8 @@ async function sendFile(id: string, s: Session, dc: RTCDataChannel, blob: Blob, 
     if (dc.bufferedAmount > HIGH_WATER) await new Promise(r => dc.addEventListener('bufferedamountlow', r, { once: true }))
     dc.send(await blob.slice(a, b).arrayBuffer())
   }
-  // The receiver closes the connection once it has verified the file; this is just a backstop.
-  s.timer = setTimeout(() => close(id), 60_000)
+  // The receiver closes the connection once it has verified the file; this is only a backstop.
+  setTimer(s, 60_000, () => close(id))
 }
 
 async function onRequest(from: string, id: string, trackId: string) {
@@ -162,16 +189,16 @@ async function onRequest(from: string, id: string, trackId: string) {
   activeSends++
   const s: Session = { role: 'send', peer: from, trackId, pendingIce: [] }
   sessions.set(id, s)
-  s.timer = setTimeout(() => close(id), 10 * 60_000) // hard stop for a stuck transfer
+  // If the receiver vanished before we connected, free the slot quickly (not after 10 minutes).
+  setTimer(s, CONNECT_TIMEOUT_MS + 5000, () => close(id))
   const pc = newPeer(id, s)
   const dc = pc.createDataChannel('earshot-file', { ordered: true })
   dc.onopen = () => {
-    toast(`Sending “${t.title}” to ${nameOf(from)}…`)
+    setTimer(s, 10 * 60_000, () => close(id)) // hard stop for a transfer that never finishes
+    if (s.trackId === currentItem.value?.track.id || document.visibilityState === 'visible') toast(`Sending “${t.title}” to ${nameOf(from)}…`)
     sendFile(id, s, dc, blob, t.share!.license).catch(() => close(id))
   }
-  pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') close(id)
-  }
+  dc.onclose = () => close(id)
   await pc.setLocalDescription(await pc.createOffer())
   send(from, { type: 'offer', transferId: id, sdp: pc.localDescription!.sdp })
 }
@@ -207,7 +234,7 @@ socket.on('rtc:signal', async ({ from, data }) => {
       case 'reject':
         if (!s || s.peer !== from) return
         return failReceive(id, data.reason === 'busy'
-          ? `${nameOf(from)} is sending to others right now — try again in a moment.`
+          ? `${nameOf(from)} is sending to others right now — trying again shortly.`
           : `${nameOf(from)} can't share this song right now.`)
     }
   } catch {
@@ -216,33 +243,104 @@ socket.on('rtc:signal', async ({ from, data }) => {
   }
 })
 
+// ---------- automatic background fetching ----------
+
+function offerIds(trackId: string) {
+  return offersFor(trackId).map(o => o.participantId)
+}
+
+let memo = new Map<string, FetchMemo>()
+let inFlight: string | null = null
+
+function finished(trackId: string, ok: boolean, peer: string) {
+  if (!ok) memo = new Map(memo).set(trackId, afterFailure(memo.get(trackId), peer, Date.now()))
+  if (inFlight === trackId) inFlight = null
+  pump()
+}
+
+const saveData = () => !!(navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData
+
+function pump() {
+  const r = room.value
+  if (inFlight || !autoFetch.value || saveData() || connection.value !== 'online' || !r) return
+  const items = r.queue.items
+  const pick = planFetch({
+    queue: items.map(i => i.track.id),
+    currentIndex: items.findIndex(i => i.id === r.playback.itemId),
+    have: id => {
+      const t = items.find(i => i.track.id === id)!.track
+      return resolveLocal(t).status === 'ready' || isActive(receiving.value[id])
+    },
+    offers: offerIds,
+    memo,
+    now: Date.now(),
+  })
+  if (!pick) return
+  inFlight = pick.trackId
+  requestCopy(items.find(i => i.track.id === pick.trackId)!.track, pick.from, true)
+}
+
+// Re-plan whenever the queue, offers, your library or the setting change; the interval covers
+// backoff timers expiring (it keeps running in background tabs, just less often).
+effect(() => { room.value; localTracks.value; autoFetch.value; connection.value; pump() })
+setInterval(pump, 5000)
+
+// A different room starts with a clean slate.
+effect(() => {
+  roomCode.value
+  memo = new Map()
+  inFlight = null
+  receiving.value = {}
+})
+
 // ---------- announcing what you share ----------
 // Offer only songs that are in this room's queue, that you hold as the exact file, and that you
-// attested you may share. The server forgets offers when you disconnect, so re-announce on rejoin.
+// attested you may share. Rather than assuming an offer arrived, compare with what the server says
+// you're offering and fix any difference (offers vanish on reconnect, or a message can be dropped).
 
-let announced = new Map<string, License>()
-effect(() => {
+const lastSent = new Map<string, number>() // "offer:<id>" / "withdraw:<id>" → when, to avoid resending too often
+const RESEND_MS = 5000
+
+function reconcileOffers() {
   const r = room.value
-  const online = connection.value === 'online' && !!me.value
-  if (!r || !online) {
-    announced = new Map()
-    return
-  }
+  if (!r || connection.value !== 'online' || !me.value) return
   const wanted = new Map<string, License>()
   for (const item of r.queue.items) {
     const t = shareable(item.track.id)
     if (t) wanted.set(item.track.id, t.share!.license)
   }
-  for (const [trackId, license] of wanted) {
-    if (announced.get(trackId) !== license) socket.emit('share:offer', { trackId, license })
+  const onServer = new Map<string, License>()
+  for (const [trackId, offers] of Object.entries(r.shares ?? {})) {
+    const mine = offers.find(o => o.participantId === me.value)
+    if (mine) onServer.set(trackId, mine.license)
   }
-  for (const trackId of announced.keys()) if (!wanted.has(trackId)) socket.emit('share:withdraw', trackId)
-  announced = wanted
-})
+  const now = Date.now()
+  const due = (key: string) => {
+    if (now - (lastSent.get(key) ?? 0) < RESEND_MS) return false
+    lastSent.set(key, now)
+    return true
+  }
+  for (const [trackId, license] of wanted) {
+    if (onServer.get(trackId) !== license && due(`offer:${trackId}`)) socket.emit('share:offer', { trackId, license })
+  }
+  for (const trackId of onServer.keys()) {
+    if (!wanted.has(trackId) && due(`withdraw:${trackId}`)) socket.emit('share:withdraw', trackId)
+  }
+}
+effect(() => { room.value; localTracks.value; connection.value; me.value; reconcileOffers() })
+effect(() => { if (connection.value !== 'online') lastSent.clear() }) // a fresh connection sends right away
+setInterval(reconcileOffers, RESEND_MS)
 
 /** Offers from other people for this song (what the "Get a copy" button uses). */
 export function offersFor(trackId: string) {
   return (room.value?.shares?.[trackId] ?? []).filter(o => o.participantId !== me.value && participantById(o.participantId)?.isOnline)
+}
+
+/** Best person to ask manually: after a failure, someone other than whoever just failed. */
+export function bestOffer(trackId: string) {
+  const offers = offersFor(trackId)
+  const last = receiving.value[trackId]
+  return (last?.state === 'failed' ? offers.find(o => o.participantId !== last.from) : undefined) ?? offers[0]
 }
 
 /** Is this song one you attested you may share (and hold as the exact file)? */

@@ -83,6 +83,14 @@ export const LICENSES = {
 } as const
 export type License = keyof typeof LICENSES
 
+/** Where to read each licence (Creative Commons deeds). */
+export const LICENSE_URLS: Partial<Record<License, string>> = {
+  'cc-by': 'https://creativecommons.org/licenses/by/4.0/',
+  'cc-by-sa': 'https://creativecommons.org/licenses/by-sa/4.0/',
+  'cc-by-nc': 'https://creativecommons.org/licenses/by-nc/4.0/',
+  cc0: 'https://creativecommons.org/publicdomain/zero/1.0/',
+}
+
 /** Someone online in the room who attested they may share this exact file (trackId). */
 export interface ShareOffer {
   participantId: string

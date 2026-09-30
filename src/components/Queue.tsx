@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import type { QueueItem, Track } from '../../shared/types.ts'
 import { artUrls, importing, localTracks, resolveLocal } from '../library/library.ts'
-import { offersFor, receiving, requestCopy } from '../share/p2p.ts'
+import { bestOffer, isActive, offersFor, receiving, requestCopy } from '../share/p2p.ts'
 import { importAndQueue } from '../state/actions.ts'
 import { canControl, canEditQueue, me, participantById, playback, queue, room, shownQueue } from '../state/room.ts'
 import { useFlip } from '../utils/flip.ts'
@@ -17,6 +17,10 @@ export function Availability({ track }: { track: Track }) {
   const r = resolveLocal(track)
   if (r.status === 'ready') return <span class="avail ok"><Icon name="check" size={13} /> Ready</span>
   if (r.status === 'probable') return <span class="avail match" title="A similar song is in your library">Match?</span>
+  const got = receiving.value[track.id]
+  if (isActive(got)) {
+    return <span class="avail match" role="status">{got.state === 'receiving' ? `Getting a copy… ${Math.round(got.progress * 100)}%` : 'Getting a copy…'}</span>
+  }
   if (offersFor(track.id).length) return <span class="avail match" title="A friend can send you a copy">Missing · shared</span>
   return <span class="avail warn"><Icon name="warn" size={13} /> Missing</span>
 }
@@ -159,8 +163,8 @@ function ItemMenu({ item, onClose }: { item: QueueItem; onClose: () => void }) {
   const act = (fn: () => void) => () => { fn(); onClose() }
   const [sharing, setSharing] = useState(false)
   const own = localTracks.value.get(item.track.id) // the exact file, held locally
-  const canShare = !!own && !own.borrowed
-  const offer = resolveLocal(item.track).status === 'ready' ? undefined : offersFor(item.track.id)[0]
+  const canShare = !!own && !own.sharedBy
+  const offer = resolveLocal(item.track).status === 'ready' ? undefined : bestOffer(item.track.id)
   const busy = receiving.value[item.track.id]
   if (i === -1) return null // removed by someone else meanwhile
   if (sharing && own) return <ShareSheet track={own} onClose={onClose} />
@@ -183,9 +187,9 @@ function ItemMenu({ item, onClose }: { item: QueueItem; onClose: () => void }) {
         {canRemove && (
           <button class="menu-item danger" onClick={act(() => queue({ type: 'REMOVE', itemId: item.id }))}><Icon name="trash" /> Remove from queue</button>
         )}
-        {offer && (!busy || busy.state === 'failed') && (
+        {offer && !isActive(busy) && (
           <button class="menu-item" onClick={act(() => requestCopy(item.track, offer.participantId))}>
-            <Icon name="download" /> Get a temporary copy from {participantById(offer.participantId)?.displayName}
+            <Icon name="download" /> Get a copy from {participantById(offer.participantId)?.displayName}
           </button>
         )}
         {canShare && (

@@ -5,6 +5,7 @@ import { useLocation } from 'preact-iso'
 import { heldHere, readiness, roomPosition, tuneIn, unlockAudio } from '../audio/player.ts'
 import { artUrls, resolveLocal } from '../library/library.ts'
 import { canControl, currentItem, playback, room, shownQueue } from '../state/room.ts'
+import { isActive, receiving } from '../share/p2p.ts'
 import { unread } from '../state/social.ts'
 import { mobileTab, transition } from '../state/ui.ts'
 import { useMedia } from '../utils/media.ts'
@@ -78,7 +79,10 @@ function MiniPlayer({ onOpen }: { onOpen: () => void }) {
         <Cover id={t?.id} art={art} size={42} class="mini-art" />
         <span class="q-text">
           <span class="q-title">{t?.title ?? r.name}</span>
-          <span class="q-sub">{t ? (local?.status === 'ready' ? t.artist || 'Unknown artist' : 'Not on this device') : 'Nothing playing yet'}</span>
+          <span class="q-sub">{!t ? 'Nothing playing yet'
+            : local?.status === 'ready' ? t.artist || 'Unknown artist'
+              : isActive(receiving.value[t.id]) ? `Getting a copy… ${Math.round(receiving.value[t.id].progress * 100)}%`
+                : 'Not on this device'}</span>
         </span>
       </button>
       {item && playing && readiness.value === 'needs-tap' ? (

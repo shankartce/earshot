@@ -39,6 +39,9 @@ export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: Re
   })
   const leaveTimers = new Map<string, NodeJS.Timeout>() // `${code}:${pid}`
   const endTimers = new Map<string, NodeJS.Timeout>() // code
+  // Peer-to-peer transfers in progress: each is pinned to exactly two sockets (one tab each side).
+  const transfers = new Map<string, { requester: string; sharer: string; expires: number }>()
+  const TRANSFER_TTL_MS = 10 * 60_000
 
   const patch = (room: Room, p: { playback?: boolean; queue?: boolean; history?: boolean; participants?: boolean; settings?: boolean; meta?: boolean; shares?: boolean }) => {
     const out: RoomPatch = {}
@@ -278,11 +281,30 @@ export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: Re
       const data = parseSignal(raw?.data)
       const to = typeof raw?.to === 'string' ? raw.to : ''
       if (!c || !data || to === c.pid || !allow('signal')) return
-      // The rights gate: you can only ask for a copy from someone currently offering that exact file.
-      if (data.type === 'request' && !isOffering(c.room, to, data.trackId)) return
-      for (const s of io.sockets.sockets.values()) {
-        if (s.data.pid === to && s.data.code === c.room.code) s.emit('rtc:signal', { from: c.pid, data })
+      const key = `${c.room.code}:${data.transferId}`
+      const now = Date.now()
+
+      if (data.type === 'request') {
+        for (const [k, t] of transfers) if (t.expires < now) transfers.delete(k)
+        // The rights gate: you can only ask for a copy from someone currently offering that exact file.
+        // One tab of theirs answers (the newest), so two open tabs never both send.
+        const target = isOffering(c.room, to, data.trackId) && !transfers.has(key)
+          ? [...io.sockets.sockets.values()].filter(s => s.data.pid === to && s.data.code === c.room.code).at(-1)
+          : undefined
+        if (!target) {
+          socket.emit('rtc:signal', { from: to, data: { type: 'reject', transferId: data.transferId, reason: 'unavailable' } })
+          return
+        }
+        transfers.set(key, { requester: socket.id, sharer: target.id, expires: now + TRANSFER_TTL_MS })
+        target.emit('rtc:signal', { from: c.pid, data })
+        return
       }
+
+      // Everything after the request only travels between the two sockets of that transfer.
+      const t = transfers.get(key)
+      if (!t || t.expires < now) return
+      const other = socket.id === t.requester ? t.sharer : socket.id === t.sharer ? t.requester : null
+      if (other) io.sockets.sockets.get(other)?.emit('rtc:signal', { from: c.pid, data })
     })
   })
 

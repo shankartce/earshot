@@ -5,6 +5,7 @@ import { ProfileFields } from '../components/ProfileForm.tsx'
 import { DEFAULT_DRIFT } from '../sync/drift.ts'
 import { profile, randomAvatar, saveProfile } from '../state/profile.ts'
 import { toast } from '../state/room.ts'
+import { autoFetch, setAutoFetch } from '../share/p2p.ts'
 import { BackLink } from './Join.tsx'
 
 function Num({ label, hint, value, min, max, step, unit, onChange }: {
@@ -34,6 +35,16 @@ export function Settings() {
           <button class="btn primary" disabled={!p.displayName.trim()}>Save profile</button>
           <p class="hint">Changes show up the next time you join a room.</p>
         </form>
+
+        <hr class="sep" />
+        <h2 class="section-h">Shared songs</h2>
+        <label class="toggle-row">
+          <span>
+            Automatically get songs friends share
+            <span class="hint">When someone in the room shares a song you don't have, fetch it in the background and keep it under “Shared with me”. Skipped when your browser's data saver is on.</span>
+          </span>
+          <input type="checkbox" role="switch" class="switch" checked={autoFetch.value} onChange={e => setAutoFetch(e.currentTarget.checked)} />
+        </label>
 
         <hr class="sep" />
         <h2 class="section-h">Sync tuning</h2>

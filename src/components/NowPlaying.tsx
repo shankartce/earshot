@@ -4,7 +4,7 @@ import { heldHere, isIOS, mutedHere, prefs, readiness, roomPosition, setPrefs, s
 import { vizStyle } from '../audio/visualizer.ts'
 import { stageView } from '../state/ui.ts'
 import { LICENSES, type ShareOffer, type Track } from '../../shared/types.ts'
-import { offersFor, receiving, requestCopy } from '../share/p2p.ts'
+import { autoFetch, bestOffer, isActive, offersFor, receiving, requestCopy } from '../share/p2p.ts'
 import { Lyrics } from './Lyrics.tsx'
 import { StageTools, Visualizer } from './Visualizer.tsx'
 import { artUrls, confirmMatch, importFiles, rejectMatch, resolveLocal } from '../library/library.ts'
@@ -221,9 +221,10 @@ function CatchingUp() {
 
 /** A friend attested they may share this song: offer to fetch a temporary, verified copy from them. */
 function SharedCopy({ track, offer }: { track: Track; offer: ShareOffer }) {
-  const who = participantById(offer.participantId)?.displayName ?? 'A friend'
   const r = receiving.value[track.id]
-  const active = r && r.state !== 'failed' && r.state !== 'done'
+  const active = isActive(r)
+  const from = active ? r.from : offer.participantId
+  const who = participantById(from)?.displayName ?? 'A friend'
   const pct = Math.round((r?.progress ?? 0) * 100)
   return (
     <div class="banner accent-soft" role="status">
@@ -237,12 +238,14 @@ function SharedCopy({ track, offer }: { track: Track; offer: ShareOffer }) {
           </>
         ) : (
           <p class={`small ${r?.state === 'failed' ? 'fail-text' : 'muted'}`}>
-            {r?.state === 'failed' ? r.error : 'Get a temporary copy straight from their browser — it goes away when you leave.'}
+            {r?.state === 'failed' ? r.error
+              : autoFetch.value ? 'Getting it for you in the background…'
+                : 'Get a copy straight from their browser — it stays in your library under “Shared with me”.'}
           </p>
         )}
       </div>
       {!active && (
-        <button class="btn primary sm" onClick={() => requestCopy(track, offer.participantId)}>
+        <button class="btn primary sm" onClick={() => { const o = bestOffer(track.id); if (o) requestCopy(track, o.participantId) }}>
           {r?.state === 'failed' ? 'Try again' : 'Get a copy'}
         </button>
       )}
