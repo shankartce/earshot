@@ -2,7 +2,7 @@
 // (always the server clock) and never trusts client time. Pure enough to unit-test without sockets.
 import type { PlaybackCommand, QueueCommand } from '../../shared/events.ts'
 import { positionAt } from '../../shared/playback.ts'
-import type { ChatMessage, Participant, Profile, QueueItem, RoomSettings, RoomSnapshot } from '../../shared/types.ts'
+import type { ChatMessage, License, Participant, Profile, QueueItem, RoomSettings, RoomSnapshot } from '../../shared/types.ts'
 
 export interface Room extends RoomSnapshot {
   tokens: Record<string, string> // secret session token -> participant id (never sent to clients)
@@ -23,7 +23,7 @@ export function createRoom(code: string, name: string, emoji: string, now: numbe
     participants: [],
     queue: { items: [], version: 0 },
     playback: { itemId: null, isPlaying: false, position: 0, serverTimestamp: now, version: 0 },
-    history: [], chat: [], createdAt: now, updatedAt: now, tokens: {},
+    history: [], chat: [], shares: {}, createdAt: now, updatedAt: now, tokens: {},
   }
 }
 
@@ -63,7 +63,36 @@ export function resumeParticipant(room: Room, token: string, profile: Profile, n
 export function setOffline(room: Room, id: string, now: number) {
   const p = room.participants.find(x => x.id === id)
   if (p) Object.assign(p, { isOnline: false, lastSeen: now, readiness: 'idle' })
+  clearShares(room, id) // you can only share while you're here to send
 }
+
+// ---- peer-to-peer share offers (metadata only; audio never passes through the server) ----
+
+/** Record that `pid` attested they may share this exact file. Only for songs in this room's queue. */
+export function offerShare(room: Room, pid: string, trackId: string, license: License): boolean {
+  if (!room.queue.items.some(i => i.track.id === trackId)) return false
+  const offers = (room.shares[trackId] ?? []).filter(o => o.participantId !== pid)
+  room.shares[trackId] = [...offers, { participantId: pid, license }]
+  return true
+}
+
+export function withdrawShare(room: Room, pid: string, trackId: string): boolean {
+  const offers = room.shares[trackId]
+  if (!offers?.some(o => o.participantId === pid)) return false
+  const rest = offers.filter(o => o.participantId !== pid)
+  if (rest.length) room.shares[trackId] = rest
+  else delete room.shares[trackId]
+  return true
+}
+
+export function clearShares(room: Room, pid: string): boolean {
+  let changed = false
+  for (const trackId of Object.keys(room.shares ?? {})) changed = withdrawShare(room, pid, trackId) || changed
+  return changed
+}
+
+export const isOffering = (room: Room, pid: string, trackId: string) =>
+  !!room.shares?.[trackId]?.some(o => o.participantId === pid)
 
 /** If the host is gone, hand control to whoever has been here longest. Returns true if host changed.
  *  An empty room keeps its host, so they're still host when they come back. */

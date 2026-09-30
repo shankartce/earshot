@@ -2,12 +2,14 @@
 // by the item's action sheet (touch / keyboard), or with Alt+↑/↓ on a focused song.
 import { useEffect, useState } from 'preact/hooks'
 import type { QueueItem, Track } from '../../shared/types.ts'
-import { artUrls, importing, resolveLocal } from '../library/library.ts'
+import { artUrls, importing, localTracks, resolveLocal } from '../library/library.ts'
+import { offersFor, receiving, requestCopy } from '../share/p2p.ts'
 import { importAndQueue } from '../state/actions.ts'
 import { canControl, canEditQueue, me, participantById, playback, queue, room, shownQueue } from '../state/room.ts'
 import { useFlip } from '../utils/flip.ts'
 import { fmtTime } from '../utils/format.ts'
 import { AddMusicSheet } from './AddMusic.tsx'
+import { ShareSheet } from './ShareSheet.tsx'
 import { Icon } from './icons.tsx'
 import { ConfirmButton, Cover, DropZone, Empty, Equalizer, Sheet } from './ui.tsx'
 
@@ -15,6 +17,7 @@ export function Availability({ track }: { track: Track }) {
   const r = resolveLocal(track)
   if (r.status === 'ready') return <span class="avail ok"><Icon name="check" size={13} /> Ready</span>
   if (r.status === 'probable') return <span class="avail match" title="A similar song is in your library">Match?</span>
+  if (offersFor(track.id).length) return <span class="avail match" title="A friend can send you a copy">Missing · shared</span>
   return <span class="avail warn"><Icon name="warn" size={13} /> Missing</span>
 }
 
@@ -154,7 +157,13 @@ function ItemMenu({ item, onClose }: { item: QueueItem; onClose: () => void }) {
   const edit = canEditQueue.value
   const canRemove = edit || item.addedBy === me.value
   const act = (fn: () => void) => () => { fn(); onClose() }
+  const [sharing, setSharing] = useState(false)
+  const own = localTracks.value.get(item.track.id) // the exact file, held locally
+  const canShare = !!own && !own.borrowed
+  const offer = resolveLocal(item.track).status === 'ready' ? undefined : offersFor(item.track.id)[0]
+  const busy = receiving.value[item.track.id]
   if (i === -1) return null // removed by someone else meanwhile
+  if (sharing && own) return <ShareSheet track={own} onClose={onClose} />
   return (
     <Sheet open onClose={onClose} title={item.track.title}>
       <p class="muted small sheet-sub">{item.track.artist || 'Unknown artist'} · <Availability track={item.track} /></p>
@@ -173,6 +182,16 @@ function ItemMenu({ item, onClose }: { item: QueueItem; onClose: () => void }) {
         )}
         {canRemove && (
           <button class="menu-item danger" onClick={act(() => queue({ type: 'REMOVE', itemId: item.id }))}><Icon name="trash" /> Remove from queue</button>
+        )}
+        {offer && (!busy || busy.state === 'failed') && (
+          <button class="menu-item" onClick={act(() => requestCopy(item.track, offer.participantId))}>
+            <Icon name="download" /> Get a temporary copy from {participantById(offer.participantId)?.displayName}
+          </button>
+        )}
+        {canShare && (
+          <button class="menu-item" onClick={() => setSharing(true)}>
+            <Icon name="share" /> {own!.share ? 'Sharing with friends — change…' : 'Let friends get a copy…'}
+          </button>
         )}
         {!edit && !canRemove && <p class="muted small">Only the host can rearrange this room's queue.</p>}
       </div>

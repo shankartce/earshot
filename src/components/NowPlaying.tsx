@@ -3,6 +3,8 @@ import { useEffect, useState } from 'preact/hooks'
 import { isIOS, prefs, readiness, roomPosition, setPrefs, syncStatus, tuneIn, unlockAudio } from '../audio/player.ts'
 import { vizStyle } from '../audio/visualizer.ts'
 import { stageView } from '../state/ui.ts'
+import { LICENSES, type ShareOffer, type Track } from '../../shared/types.ts'
+import { offersFor, receiving, requestCopy } from '../share/p2p.ts'
 import { Lyrics } from './Lyrics.tsx'
 import { StageTools, Visualizer } from './Visualizer.tsx'
 import { artUrls, confirmMatch, importFiles, rejectMatch, resolveLocal } from '../library/library.ts'
@@ -98,6 +100,8 @@ function Readiness() {
         </div>
       )
     }
+    const offer = offersFor(item.track.id)[0]
+    if (offer) return <SharedCopy track={item.track} offer={offer} />
     const have = room.value!.participants.filter(p => p.isOnline && p.readiness === 'ready')
     return (
       <div class="banner warn" role="status">
@@ -190,4 +194,35 @@ function CatchingUp() {
     return () => clearTimeout(t)
   }, [])
   return show ? <p class="catching-up" role="status">Trying to catch up with the room…</p> : null
+}
+
+/** A friend attested they may share this song: offer to fetch a temporary, verified copy from them. */
+function SharedCopy({ track, offer }: { track: Track; offer: ShareOffer }) {
+  const who = participantById(offer.participantId)?.displayName ?? 'A friend'
+  const r = receiving.value[track.id]
+  const active = r && r.state !== 'failed' && r.state !== 'done'
+  const pct = Math.round((r?.progress ?? 0) * 100)
+  return (
+    <div class="banner accent-soft" role="status">
+      <Icon name="download" />
+      <div class="grow">
+        <p class="strong">{who} shared this song <span class="muted">({LICENSES[offer.license]})</span></p>
+        {active ? (
+          <>
+            <p class="muted small">{r.state === 'connecting' ? `Connecting to ${who}…` : r.state === 'verifying' ? 'Checking the copy…' : `Receiving… ${pct}%`}</p>
+            <span class="bar" style={{ '--p': `${r.state === 'connecting' ? 0 : pct}%` }} aria-hidden="true" />
+          </>
+        ) : (
+          <p class={`small ${r?.state === 'failed' ? 'fail-text' : 'muted'}`}>
+            {r?.state === 'failed' ? r.error : 'Get a temporary copy straight from their browser — it goes away when you leave.'}
+          </p>
+        )}
+      </div>
+      {!active && (
+        <button class="btn primary sm" onClick={() => requestCopy(track, offer.participantId)}>
+          {r?.state === 'failed' ? 'Try again' : 'Get a copy'}
+        </button>
+      )}
+    </div>
+  )
 }

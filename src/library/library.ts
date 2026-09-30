@@ -2,7 +2,7 @@
 // origin-private storage (OPFS); the index (titles, playlists, confirmed matches) in local storage.
 // Nothing here is ever sent to the server except Track metadata (hash id, title, artist, album, duration).
 import { computed, signal } from '@preact/signals'
-import type { Track } from '../../shared/types.ts'
+import type { License, Track } from '../../shared/types.ts'
 import { read, write } from '../state/profile.ts'
 import type { WorkerReq, WorkerRes } from './hash.worker.ts'
 import { resolve, type Resolution } from './match.ts'
@@ -16,6 +16,10 @@ export interface LocalTrack extends Track {
   addedAt: number
   hasArt: boolean
   hasLyrics?: boolean
+  /** You attested you may share this exact file with friends (own work / openly licensed). */
+  share?: { license: License; attestedAt: number }
+  /** A temporary copy received from a friend: memory-only, never saved, never re-shared. */
+  borrowed?: boolean
 }
 
 export interface Playlist { id: string; name: string; trackIds: string[]; createdAt: number }
@@ -34,7 +38,8 @@ export const libraryReady = signal(false)
 /** false when the browser won't let us keep files (e.g. private browsing) — they last for this visit only */
 export const persistentStorage = signal(true)
 
-export const sortedTracks = computed(() => [...localTracks.value.values()].sort((a, b) => b.addedAt - a.addedAt))
+/** Your own library (borrowed copies are temporary and not part of it). */
+export const sortedTracks = computed(() => [...localTracks.value.values()].filter(t => !t.borrowed).sort((a, b) => b.addedAt - a.addedAt))
 
 const KEY = 'jam:library'
 const memory = new Map<string, Blob>() // files we couldn't store on disk (this visit only)
@@ -51,7 +56,7 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined
 function save() {
   clearTimeout(saveTimer)
   saveTimer = setTimeout(() => write(KEY, {
-    v: 1, tracks: [...localTracks.value.values()], playlists: playlists.value, aliases: aliases.value,
+    v: 1, tracks: [...localTracks.value.values()].filter(t => !t.borrowed), playlists: playlists.value, aliases: aliases.value,
   } satisfies SavedLibrary), 250)
 }
 
@@ -241,6 +246,25 @@ export async function getFile(localId: string): Promise<Blob | null> {
 }
 
 export const toTrack = ({ id, title, artist, album, duration }: LocalTrack): Track => ({ id, title, artist, album, duration })
+
+/** Record (or clear) your attestation that you may share this file. */
+export function setShare(localId: string, license: License | null) {
+  const t = localTracks.value.get(localId)
+  if (!t || t.borrowed) return
+  const { share: _old, ...rest } = t
+  localTracks.value = new Map(localTracks.value).set(localId, license ? { ...rest, share: { license, attestedAt: Date.now() } } : rest)
+  save()
+}
+
+/** Keep a verified copy a friend sent, for this visit only (never written to disk or the library). */
+export function addBorrowed(track: Track, blob: Blob) {
+  memory.set(track.id, blob)
+  if (localTracks.value.has(track.id)) return
+  const t: LocalTrack = {
+    ...track, albumArtist: '', trackNo: null, fileName: '', size: blob.size, addedAt: Date.now(), hasArt: false, borrowed: true,
+  }
+  localTracks.value = new Map(localTracks.value).set(track.id, t)
+}
 
 export function confirmMatch(roomTrackId: string, localId: string) {
   aliases.value = { ...aliases.value, [roomTrackId]: localId }

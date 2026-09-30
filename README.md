@@ -5,11 +5,11 @@
 ### *Come listen with me.*
 
 Listen to music together, in sync, from anywhere.<br>
-Everyone plays their **own** copy of each song, so your music never leaves your device.
+Everyone plays their **own** copy of each song, and your music is never uploaded to Earshot.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-ff7a59.svg)](LICENSE)
 ![Node 22.18+](https://img.shields.io/badge/node-%E2%89%A522.18-ffb454.svg)
-![Tests](https://img.shields.io/badge/tests-73%20passing-7ccf6a.svg)
+![Tests](https://img.shields.io/badge/tests-83%20passing-7ccf6a.svg)
 ![Built with Preact + Socket.IO](https://img.shields.io/badge/built%20with-Preact%20%2B%20Socket.IO-b388ff.svg)
 
 ### **▶ [Try it live: earshot-30yv.onrender.com](https://earshot-30yv.onrender.com)**
@@ -27,7 +27,7 @@ Earshot is a **shared listening room**. You open a room, send your friend a link
 
 Unlike streaming services, Earshot doesn't stream anything. **Each person plays the song from their own device.** Earshot only keeps everyone's players in step: what's playing, whether it's paused, and where the song is. It works with the music you already own: MP3, FLAC, AAC/M4A, OGG, WAV and more.
 
-- 🔒 **Private by design.** Your audio files are never uploaded, anywhere.
+- 🔒 **Private by design.** Your audio files are never uploaded to Earshot. (You can choose to send songs you have the rights to straight to a friend; see the FAQ.)
 - ⚡ **Tightly in sync.** Listeners stay within a few tens of milliseconds of each other and correct themselves continuously.
 - 💬 **Feels like hanging out.** See who's listening, react to the drop, chat, and build the queue together.
 
@@ -127,7 +127,15 @@ Rooms are remembered for 7 days. The home page shows **Jump back in**, which ret
 <details>
 <summary><b>Does Earshot upload or stream my music?</b></summary>
 
-No. There's no upload feature at all. Your files stay in your browser's private storage on your device. The server only learns song details such as *"Midnight City – M83, 4:03"* plus a fingerprint (a SHA-256 hash of the file), and who pressed play.
+No. There's no upload feature at all, and nothing is ever sent to Earshot's server. Your files stay in your browser's private storage on your device. The server only learns song details such as *"Midnight City – M83, 4:03"* plus a fingerprint (a SHA-256 hash of the file), and who pressed play.
+</details>
+
+<details>
+<summary><b>Can a friend get a song from me?</b></summary>
+
+Only for music you have the right to share: your own recordings, or songs under Creative Commons or in the public domain. Open the song's **⋯** menu and choose **Let friends get a copy…**, pick the licence, and confirm you have the right to share it. Friends missing that song then see **Get a copy**, and the file goes straight from your browser to theirs. It never passes through Earshot's server, it's checked to be the exact same file, and it disappears from their device when they leave.
+
+**Sharing policy:** don't share songs you bought, streamed or ripped from CDs; that's copyright infringement in most countries. Earshot can't verify licences; the person sharing is responsible. Direct connections don't work on every network (some mobile carriers and office networks block them).
 </details>
 
 <details>
@@ -197,7 +205,7 @@ npm start          # serves the app + realtime server on $PORT (default 3000)
 
 ```bash
 npm run dev         # app + realtime server in one process (http://localhost:5173)
-npm test            # 73 unit + multi-client integration tests (Vitest)
+npm test            # 83 unit + multi-client integration tests (Vitest)
 npm run typecheck   # TypeScript
 npm run build       # production client → dist/
 npm start           # production server (serves dist/)
@@ -220,14 +228,15 @@ shared/    types, typed socket events, input validators, playhead math (used by 
 server/    app.ts (HTTP + security headers) · state/room.ts (pure room logic)
            rooms/store.ts (memory + JSON snapshot) · websocket/handlers.ts · rateLimit.ts
 src/       audio/ (sync player, visualizer) · sync/ · library/ (storage, hashing worker,
-           tags, matching) · lyrics/ · state/ · components/ · pages/ · styles/
+           tags, matching) · share/ (rights-gated WebRTC sharing) · lyrics/ · state/ ·
+           components/ · pages/ · styles/
 tests/     room logic, sync math, matching, tag parsing, lyrics, HTTP, multi-client scenarios
 ```
 
-See [`CLAUDE.md`](CLAUDE.md) for the design rules the project must keep: audio never leaves the device, the server is authoritative, and every command is versioned.
+See [`CLAUDE.md`](CLAUDE.md) for the design rules the project must keep: audio never touches the server, the server is authoritative, and every command is versioned.
 
 ### Contributing
-Issues and pull requests are welcome. Please run `npm test` and `npm run typecheck` before opening a PR, and keep the golden rule: **audio never leaves the listener's device.**
+Issues and pull requests are welcome. Please run `npm test` and `npm run typecheck` before opening a PR, and keep the golden rule: **audio never touches the server.**
 
 ---
 

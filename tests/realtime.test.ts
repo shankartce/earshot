@@ -310,6 +310,79 @@ describe('chat & abuse protection', () => {
   })
 })
 
+describe('p2p sharing: the server only relays the handshake, and only for attested songs', () => {
+  const signalsTo = (c: ReturnType<typeof client>) => {
+    const got: any[] = []
+    c.s.on('rtc:signal', p => got.push(p))
+    return got
+  }
+
+  it('a copy can only be requested from someone offering that exact song', async () => {
+    const { people } = await roomOf(2)
+    const [alex, sam] = people
+    await alex.queue({ type: 'ADD', tracks: [track(1), track(2)] })
+    await until(() => sam.view.state!.queue.items.length === 2)
+    const atAlex = signalsTo(alex)
+    const request = (trackId: string) => sam.s.emit('rtc:signal', { to: alex.view.you, data: { type: 'request', transferId: `r-${trackId.slice(-2)}`, trackId } })
+
+    request(track(1).id) // Alex hasn't attested anything yet
+    await sleep(150)
+    expect(atAlex).toEqual([])
+
+    alex.s.emit('share:offer', { trackId: track(1).id, license: 'cc-by' })
+    await until(() => (sam.view.state!.shares?.[track(1).id] ?? []).length === 1)
+    expect(sam.view.state!.shares[track(1).id][0]).toEqual({ participantId: alex.view.you, license: 'cc-by' })
+
+    request(track(2).id) // offered track 1, not track 2
+    request(track(1).id)
+    await until(() => atAlex.length === 1)
+    await sleep(100)
+    expect(atAlex).toHaveLength(1)
+    expect(atAlex[0]).toMatchObject({ from: sam.view.you, data: { type: 'request', trackId: track(1).id } })
+  })
+
+  it('handshake messages reach only the addressed member of the same room', async () => {
+    const a = await roomOf(3)
+    const b = await roomOf(1)
+    const [alex, sam, jamie] = a.people
+    const atSam = signalsTo(sam)
+    const atJamie = signalsTo(jamie)
+    const outsider = signalsTo(b.people[0])
+    alex.s.emit('rtc:signal', { to: sam.view.you, data: { type: 'offer', transferId: 'x1', sdp: 'v=0' } })
+    alex.s.emit('rtc:signal', { to: b.people[0].view.you, data: { type: 'offer', transferId: 'x2', sdp: 'v=0' } }) // other room
+    b.people[0].s.emit('rtc:signal', { to: sam.view.you, data: { type: 'offer', transferId: 'x3', sdp: 'v=0' } }) // from outside
+    await until(() => atSam.length === 1)
+    await sleep(150)
+    expect(atSam).toEqual([{ from: alex.view.you, data: { type: 'offer', transferId: 'x1', sdp: 'v=0' } }])
+    expect(atJamie).toEqual([])
+    expect(outsider).toEqual([])
+  })
+
+  it('oversized or malformed handshakes are dropped; spam is rate limited', async () => {
+    const { people } = await roomOf(2)
+    const [alex, sam] = people
+    const atSam = signalsTo(sam)
+    alex.s.emit('rtc:signal', { to: sam.view.you, data: { type: 'offer', transferId: 'big', sdp: 'x'.repeat(20_000) } })
+    const raw = alex.s as any // deliberately invalid payloads
+    raw.emit('rtc:signal', { to: sam.view.you, data: { type: 'file', transferId: 'raw', bytes: 'AAAA' } })
+    for (let i = 0; i < 100; i++) raw.emit('rtc:signal', { to: sam.view.you, data: { type: 'ice', transferId: 'ice', candidate: { candidate: `c${i}` } } })
+    await sleep(400)
+    expect(atSam.some(m => m.data.transferId === 'big' || m.data.transferId === 'raw')).toBe(false)
+    expect(atSam.length).toBeGreaterThan(30)
+    expect(atSam.length).toBeLessThan(100)
+  })
+
+  it("a sharer's offers disappear when they leave", async () => {
+    const { people } = await roomOf(2)
+    const [alex, sam] = people
+    await alex.queue({ type: 'ADD', tracks: [track(1)] })
+    alex.s.emit('share:offer', { trackId: track(1).id, license: 'own' })
+    await until(() => !!sam.view.state!.shares?.[track(1).id])
+    alex.s.disconnect()
+    await until(() => !sam.view.state!.shares?.[track(1).id])
+  })
+})
+
 describe('persistence', () => {
   it('rooms survive a server restart', async () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'jam-')), 'rooms.json')

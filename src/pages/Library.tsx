@@ -11,6 +11,7 @@ import {
 import { queueTracks, reportImport } from '../state/actions.ts'
 import { room, toast } from '../state/room.ts'
 import { fmtTime } from '../utils/format.ts'
+import { ShareSheet, SharedBadge } from '../components/ShareSheet.tsx'
 import { BackLink } from './Join.tsx'
 
 type Sort = 'recent' | 'title' | 'artist' | 'album'
@@ -34,7 +35,7 @@ async function onImport(files: File[]) {
 export function Library() {
   const [tab, setTab] = useState<'songs' | 'playlists'>('songs')
   const [usage, setUsage] = useState<{ used: number; quota: number } | null>(null)
-  const count = localTracks.value.size
+  const count = sortedTracks.value.length
   useEffect(() => { storageUsage().then(setUsage) }, [count])
 
   return (
@@ -126,15 +127,22 @@ function Songs() {
 
 function SongRow({ t }: { t: LocalTrack }) {
   const inRoom = !!room.value
+  const [sharing, setSharing] = useState(false)
   return (
     <li class="lib-row">
+      {sharing && <ShareSheet track={t} onClose={() => setSharing(false)} />}
       <Cover id={t.id} art={artUrls.value.get(t.id)} size={46} />
       <span class="q-text">
         <span class="q-title">{t.title}</span>
         <span class="q-sub">{[t.artist || 'Unknown artist', t.album].filter(Boolean).join(' · ')}</span>
+        {t.share && <SharedBadge license={t.share.license} />}
       </span>
       <span class="q-dur">{fmtTime(t.duration)}</span>
       <div class="lib-actions">
+        <button class={`icon-btn sm${t.share ? ' on' : ''}`} aria-label={t.share ? `Sharing ${t.title} with friends — change` : `Let friends get a copy of ${t.title}`}
+          title={t.share ? 'Sharing with friends' : 'Let friends get a copy'} onClick={() => setSharing(true)}>
+          <Icon name="share" size={17} />
+        </button>
         {inRoom && (
           <button class="icon-btn sm" aria-label={`Add ${t.title} to the room queue`} title="Add to queue" onClick={() => queueTracks([t])}>
             <Icon name="plus" size={18} />

@@ -48,6 +48,9 @@ export function Sheet({ open, onClose, title, children, wide }: {
   }, [open])
   return (
     <dialog ref={ref} class={`sheet${wide ? ' wide' : ''}`} aria-labelledby={id} onClose={onClose}
+      // Esc fires 'cancel' synchronously; 'close' can arrive a frame later. Handle Esc ourselves so
+      // the owner's open-state updates immediately and the sheet can always be reopened.
+      onCancel={e => { e.preventDefault(); onClose() }}
       onClick={e => { if (e.target === ref.current) onClose() }}>
       <div class="sheet-body">
         <header class="sheet-head">

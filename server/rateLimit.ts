@@ -8,6 +8,8 @@ export const RULES: Rules = {
   queue: [20, 5_000],
   typing: [1, 1_000],
   join: [5, 10_000],
+  signal: [60, 10_000], // WebRTC handshake messages (ICE candidates come in bursts)
+  share: [30, 10_000],
 }
 
 export function rateLimiter(rules: Rules = RULES) {

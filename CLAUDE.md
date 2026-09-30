@@ -3,7 +3,8 @@
 Earshot ("Come listen with me.") is a set of shared listening rooms where each person plays their **own local copy** of each song. Stack: Vite + Preact + TypeScript client, Express + Socket.IO server that runs `.ts` directly on Node 22.18+.
 
 ## Invariants (don't break these)
-- **Audio never leaves the device.** No upload endpoints, no body parsers, no audio/artwork in socket payloads. Only `Track = { id: 'sha256:…', title, artist, album, duration }` is shared.
+- **Audio never touches the server.** No upload endpoints, no body parsers, no audio/artwork in socket payloads. Only `Track = { id: 'sha256:…', title, artist, album, duration }` is shared.
+- **Peer-to-peer sharing is rights-gated.** Only tracks the owner attested (own / CC / public domain, `LocalTrack.share`) can be offered. The server relays only the WebRTC handshake, and only lets you `request` a track from someone offering it. Receivers verify the SHA-256 and keep the copy in memory only (`borrowed`). No TURN relay: it would route audio through a server.
 - **The server is authoritative.** All state changes go through the pure reducer in `server/state/room.ts`, using server time only (`serverTimestamp`). Client timestamps and positions are never trusted, apart from a clamped SEEK target.
 - **Versioned commands.** Playback commands carry `baseVersion`; stale ones are rejected with `error: 'stale'`, which the client ignores silently. Queue ops target item ids; MOVE is version-checked.
 - **Client drift correction** lives in `src/audio/player.ts` + `src/sync/drift.ts`. The playhead math is `shared/playback.ts#positionAt`, the same on both sides.

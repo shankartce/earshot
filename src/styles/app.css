@@ -602,6 +602,19 @@ body[data-dock='both'] { --dock-h: 134px; }
 .recent[open] summary::before { transform: rotate(90deg); }
 .recent .queue-list { margin-top: 6px; }
 
+/* ============ peer-to-peer sharing ============ */
+.avail.shared { color: var(--accent-2); font-size: 11px; margin-top: 2px; }
+.banner.accent-soft { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 9%, transparent); flex-wrap: wrap; }
+.banner.accent-soft > svg { color: var(--accent); flex: none; }
+.banner .bar { display: block; height: 4px; margin-top: 6px; border-radius: 4px; background: linear-gradient(90deg, var(--accent-2), var(--accent) var(--p), var(--surface-strong) var(--p)); transition: background var(--dur); }
+.fail-text { color: #ffb3b3; }
+.share-warn { align-items: flex-start; }
+.share-warn svg { color: var(--warn); flex: none; margin-top: 2px; }
+.check-row { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 18px; font-size: 14.5px; cursor: pointer; }
+.check-row input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent); flex: none; }
+.share-actions { justify-content: flex-end; }
+.icon-btn.on { color: var(--accent-2); }
+
 .shortcuts { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 0; font-size: 14px; }
 .shortcuts dt { color: var(--text); }
 .shortcuts dd { margin: 0; color: var(--text-muted); }

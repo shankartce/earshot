@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { rateLimiter } from '../server/rateLimit.ts'
 import {
-  cleanText, parseCode, parsePlaybackCommand, parseProfile, parseQueueCommand, parseReaction, parseTrack,
+  cleanText, parseCode, parseLicense, parsePlaybackCommand, parseProfile, parseQueueCommand, parseReaction, parseSignal, parseTrack,
 } from '../shared/validate.ts'
 import { Clock, estimate } from '../src/sync/clock.ts'
 import { DEFAULT_DRIFT, decide, learnSeekLead } from '../src/sync/drift.ts'
 import { groupMessages, typingText } from '../src/utils/chat.ts'
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts'
+import { assembleVerified, chunkRanges, parseHeader, sha256Id } from '../src/share/transfer.ts'
 
 const HASH = 'sha256:' + 'a'.repeat(64)
 
@@ -121,6 +122,48 @@ describe('drift correction', () => {
     const r = decide(0.2, { ...DEFAULT_DRIFT, gain: 10 })
     expect(r.kind === 'rate' && r.rate).toBeCloseTo(0.95)
     expect(decide(0.2, { ...DEFAULT_DRIFT, soft: 0.1 })).toEqual({ kind: 'seek' })
+  })
+})
+
+describe('p2p sharing: validation and transfer', () => {
+  const T = 'sha256:' + 'b'.repeat(64)
+
+  it('signals: known types only, bounded sizes, extras dropped', () => {
+    expect(parseSignal({ type: 'request', transferId: 't1', trackId: T, evil: 1 })).toEqual({ type: 'request', transferId: 't1', trackId: T })
+    expect(parseSignal({ type: 'request', transferId: 't1', trackId: 'not-a-hash' })).toBeNull()
+    expect(parseSignal({ type: 'offer', transferId: 't1', sdp: 'v=0' })).toMatchObject({ type: 'offer' })
+    expect(parseSignal({ type: 'offer', transferId: 't1', sdp: 'x'.repeat(16 * 1024 + 1) })).toBeNull()
+    expect(parseSignal({ type: 'ice', transferId: 't1', candidate: { candidate: 'x'.repeat(1025) } })).toBeNull()
+    expect(parseSignal({ type: 'ice', transferId: 't1', candidate: { candidate: 'c', sdpMid: '0', sdpMLineIndex: 0, junk: true } }))
+      .toEqual({ type: 'ice', transferId: 't1', candidate: { candidate: 'c', sdpMid: '0', sdpMLineIndex: 0 } })
+    expect(parseSignal({ type: 'reject', transferId: 't1', reason: 'nope' })).toBeNull()
+    expect(parseSignal({ type: 'file', transferId: 't1' })).toBeNull()
+    expect(parseLicense('cc-by')).toBe('cc-by')
+    expect(parseLicense('commercial')).toBeNull()
+    expect(parseLicense('toString')).toBeNull() // no prototype keys
+  })
+
+  it('chunk plan covers the file exactly', () => {
+    expect(chunkRanges(10, 4)).toEqual([[0, 4], [4, 8], [8, 10]])
+    expect(chunkRanges(0, 4)).toEqual([])
+  })
+
+  it('header parsing rejects bad or oversized headers', () => {
+    expect(parseHeader(JSON.stringify({ kind: 'header', trackId: T, size: 10, license: 'own' }))).toMatchObject({ size: 10 })
+    expect(parseHeader(JSON.stringify({ kind: 'header', trackId: T, size: 300 * 1024 * 1024, license: 'own' }))).toBeNull()
+    expect(parseHeader(JSON.stringify({ kind: 'header', trackId: T, size: 10, license: 'stolen' }))).toBeNull()
+    expect(parseHeader('{not json')).toBeNull()
+  })
+
+  it('only the exact promised file is accepted', async () => {
+    const bytes = new TextEncoder().encode('an openly licensed recording')
+    const id = await sha256Id(bytes.buffer)
+    const header = { kind: 'header' as const, trackId: id, size: bytes.length, license: 'cc-by' as const }
+    const parts = chunkRanges(bytes.length, 5).map(([a, b]) => bytes.slice(a, b).buffer)
+    expect(await assembleVerified(parts, header)).toBeInstanceOf(Blob)
+    const corrupted = parts.map((p, i) => (i === 2 ? new Uint8Array(p).map(x => x ^ 1).buffer : p))
+    expect(await assembleVerified(corrupted, header)).toBeNull()
+    expect(await assembleVerified(parts.slice(1), header)).toBeNull()
   })
 })
 

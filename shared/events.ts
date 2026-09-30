@@ -1,5 +1,5 @@
 import type {
-  ChatMessage, Participant, PlaybackState, Profile, QueueState, Readiness, RoomMeta,
+  ChatMessage, License, Participant, PlaybackState, Profile, QueueState, Readiness, RoomMeta,
   RoomSettings, RoomSnapshot, Track,
 } from './types.ts'
 
@@ -19,6 +19,17 @@ export type QueueCommand =
   | { type: 'MOVE'; itemId: string; toIndex: number; baseVersion: number }
   | { type: 'PLAY_NEXT'; itemId: string }
   | { type: 'CLEAR' }
+
+/**
+ * WebRTC handshake for peer-to-peer sharing of attested tracks. The server relays these messages
+ * between two members of a room; the audio itself flows browser-to-browser over a DataChannel.
+ */
+export type Signal =
+  | { type: 'request'; transferId: string; trackId: string } // receiver → sharer (server checks the offer exists)
+  | { type: 'offer'; transferId: string; sdp: string } // sharer → receiver
+  | { type: 'answer'; transferId: string; sdp: string } // receiver → sharer
+  | { type: 'ice'; transferId: string; candidate: { candidate: string; sdpMid: string | null; sdpMLineIndex: number | null } }
+  | { type: 'reject'; transferId: string; reason: 'busy' | 'unavailable' | 'failed' }
 
 export type Ack<T = object> = ({ ok: true } & T) | { ok: false; error: string }
 
@@ -43,6 +54,7 @@ export interface RoomPatch {
   participants?: Participant[]
   meta?: RoomMeta
   history?: Track[]
+  shares?: RoomSnapshot['shares']
 }
 
 export interface ClientToServer {
@@ -59,6 +71,9 @@ export interface ClientToServer {
   'chat:typing': () => void
   'chat:react': (p: { messageId: string; emoji: string }) => void
   'reaction:send': (emoji: string) => void
+  'share:offer': (p: { trackId: string; license: License }) => void
+  'share:withdraw': (trackId: string) => void
+  'rtc:signal': (p: { to: string; data: Signal }) => void
 }
 
 export interface ServerToClient {
@@ -70,4 +85,5 @@ export interface ServerToClient {
   'chat:reactions': (p: { messageId: string; reactions: ChatMessage['reactions'] }) => void
   'chat:typing': (participantId: string) => void
   'reaction': (p: { participantId: string; emoji: string; at: number }) => void
+  'rtc:signal': (p: { from: string; data: Signal }) => void
 }

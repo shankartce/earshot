@@ -44,7 +44,7 @@ export function Landing() {
       </section>
 
       <p class="privacy-note">
-        <Icon name="check" size={16} /> Your audio never leaves your device. Rooms share only song details and play state.
+        <Icon name="check" size={16} /> Your audio is never uploaded to Earshot. Rooms share only song details and play state.
       </p>
     </main>
   )

@@ -6,13 +6,13 @@ import type { Ack, ClientToServer, Joined, RoomPatch, ServerToClient } from '../
 import { positionAt } from '../../shared/playback.ts'
 import {
   cleanText, parseCode, parsePlaybackCommand, parseProfile, parseQueueCommand, parseReaction,
-  parseReadiness, parseSettingsPatch,
+  parseLicense, parseReadiness, parseSettingsPatch, parseSignal, parseTrackId,
 } from '../../shared/validate.ts'
 import { rateLimiter } from '../rateLimit.ts'
 import type { RoomStore } from '../rooms/store.ts'
 import {
   addChat, addParticipant, applyPlayback, applyQueue, applySettings, ensureHost, reactToMessage,
-  resumeParticipant, setOffline, snapshot, type Result, type Room,
+  isOffering, offerShare, resumeParticipant, setOffline, snapshot, withdrawShare, type Result, type Room,
 } from '../state/room.ts'
 
 interface SocketData { code?: string; pid?: string }
@@ -33,7 +33,7 @@ export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: Re
   const leaveTimers = new Map<string, NodeJS.Timeout>() // `${code}:${pid}`
   const endTimers = new Map<string, NodeJS.Timeout>() // code
 
-  const patch = (room: Room, p: { playback?: boolean; queue?: boolean; history?: boolean; participants?: boolean; settings?: boolean; meta?: boolean }) => {
+  const patch = (room: Room, p: { playback?: boolean; queue?: boolean; history?: boolean; participants?: boolean; settings?: boolean; meta?: boolean; shares?: boolean }) => {
     const out: RoomPatch = {}
     if (p.playback) out.playback = room.playback
     if (p.queue) out.queue = room.queue
@@ -41,6 +41,7 @@ export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: Re
     if (p.participants) out.participants = room.participants
     if (p.settings) out.settings = room.settings
     if (p.meta) out.meta = { name: room.name, emoji: room.emoji, hostId: room.hostId }
+    if (p.shares) out.shares = room.shares
     if (Object.keys(out).length) io.to(room.code).emit('room:patch', out)
     store.save()
   }
@@ -111,8 +112,8 @@ export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: Re
       // Another tab may still be connected as the same person.
       const stillHere = [...io.sockets.sockets.values()].some(s => s.data.pid === c.pid && s.data.code === c.room.code)
       if (stillHere) return
-      setOffline(c.room, c.pid, Date.now())
-      patch(c.room, { participants: true })
+      setOffline(c.room, c.pid, Date.now()) // also withdraws their share offers
+      patch(c.room, { participants: true, shares: true })
       scheduleLeave(c.room, c.pid)
     }
 
@@ -247,6 +248,34 @@ export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: Re
       const emoji = parseReaction(raw)
       if (!c || !emoji || !c.room.settings.allowReactions || !allow('reaction')) return
       io.to(c.room.code).emit('reaction', { participantId: c.pid, emoji, at: Date.now() })
+    })
+
+    // ---- peer-to-peer sharing of attested tracks: only metadata and the WebRTC handshake pass here ----
+
+    on('share:offer', raw => {
+      const c = ctx()
+      const trackId = parseTrackId(raw?.trackId)
+      const license = parseLicense(raw?.license)
+      if (!c || !trackId || !license || !allow('share')) return
+      if (offerShare(c.room, c.pid, trackId, license)) patch(c.room, { shares: true })
+    })
+
+    on('share:withdraw', raw => {
+      const c = ctx()
+      const trackId = parseTrackId(raw)
+      if (c && trackId && allow('share') && withdrawShare(c.room, c.pid, trackId)) patch(c.room, { shares: true })
+    })
+
+    on('rtc:signal', raw => {
+      const c = ctx()
+      const data = parseSignal(raw?.data)
+      const to = typeof raw?.to === 'string' ? raw.to : ''
+      if (!c || !data || to === c.pid || !allow('signal')) return
+      // The rights gate: you can only ask for a copy from someone currently offering that exact file.
+      if (data.type === 'request' && !isOffering(c.room, to, data.trackId)) return
+      for (const s of io.sockets.sockets.values()) {
+        if (s.data.pid === to && s.data.code === c.room.code) s.emit('rtc:signal', { from: c.pid, data })
+      }
     })
   })
 

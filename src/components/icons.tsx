@@ -35,6 +35,7 @@ const paths = {
   chat: <path d="M4.5 6A1.5 1.5 0 0 1 6 4.5h12A1.5 1.5 0 0 1 19.5 6v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5v-3.5H6A1.5 1.5 0 0 1 4.5 15Z" />,
   wave: <><path d="M3 12h2" /><path d="M7 8v8" /><path d="M11 5v14" /><path d="M15 9v6" /><path d="M19 7v10" /><path d="M21 12h0" /></>,
   lyrics: <><path d="M5 6.5h14" /><path d="M5 11h10" /><path d="M5 15.5h7" /><circle cx="17" cy="17" r="2" /><path d="M19 17V10.5l2-.5" /></>,
+  download: <><path d="M12 4v11" /><path d="m7.5 10.5 4.5 4.5 4.5-4.5" /><path d="M5 19.5h14" /></>,
   home: <><path d="M4 11 12 4.5 20 11" /><path d="M6.5 9.5V19h11V9.5" /></>,
   arrowLeft: <><path d="M19 12H5" /><path d="m11 6-6 6 6 6" /></>,
 } satisfies Record<string, JSX.Element>

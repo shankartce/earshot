@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { positionAt } from '../shared/playback.ts'
 import type { Profile, Track } from '../shared/types.ts'
 import {
-  addChat, addParticipant, applyPlayback, applyQueue, applySettings, createRoom, ensureHost,
-  reactToMessage, resumeParticipant, setOffline, snapshot, type Room,
+  addChat, addParticipant, applyPlayback, applyQueue, applySettings, createRoom, ensureHost, isOffering, offerShare,
+  reactToMessage, resumeParticipant, setOffline, snapshot, withdrawShare, type Room,
 } from '../server/state/room.ts'
 
 const profile = (name: string): Profile => ({ displayName: name, avatar: { emoji: '🙂', color: '#ff8844' } })
@@ -178,6 +178,33 @@ describe('queue', () => {
     const mine = room.queue.items.at(-1)!
     expect(applyQueue(room, 'sam', { type: 'MOVE', itemId: mine.id, toIndex: 0, baseVersion: room.queue.version }, 0, newId).ok).toBe(false)
     expect(applyQueue(room, 'sam', { type: 'REMOVE', itemId: mine.id }, 0, newId).ok).toBe(true)
+  })
+})
+
+describe('share offers (p2p metadata)', () => {
+  it('can only offer songs in the queue; offers vanish when you go offline', () => {
+    const room = setup(2)
+    const queued = room.queue.items[0].track.id
+    expect(offerShare(room, 'alex', track(99).id, 'own')).toBe(false) // not in the queue
+    expect(offerShare(room, 'alex', queued, 'cc-by')).toBe(true)
+    expect(offerShare(room, 'sam', queued, 'cc0')).toBe(true)
+    expect(isOffering(room, 'alex', queued)).toBe(true)
+    expect(room.shares[queued]).toHaveLength(2)
+    offerShare(room, 'alex', queued, 'own') // re-offer replaces, doesn't duplicate
+    expect(room.shares[queued]).toHaveLength(2)
+    setOffline(room, 'alex', 5)
+    expect(isOffering(room, 'alex', queued)).toBe(false)
+    expect(withdrawShare(room, 'sam', queued)).toBe(true)
+    expect(room.shares[queued]).toBeUndefined()
+    expect(withdrawShare(room, 'sam', queued)).toBe(false)
+  })
+
+  it('snapshot carries offers but still no tokens', () => {
+    const room = setup(1)
+    offerShare(room, 'alex', room.queue.items[0].track.id, 'own')
+    const s = snapshot(room)
+    expect(Object.keys(s.shares)).toHaveLength(1)
+    expect(JSON.stringify(s)).not.toContain('tok-')
   })
 })
 

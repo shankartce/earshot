@@ -21,6 +21,7 @@ export class RoomStore {
         for (const room of JSON.parse(fs.readFileSync(file, 'utf8')) as Room[]) {
           // Nobody is connected right after a restart; their grace period starts now.
           for (const p of room.participants) Object.assign(p, { isOnline: false, lastSeen: now, readiness: 'idle' })
+          room.shares = {} // share offers only exist while their sharer is connected
           this.rooms.set(room.code, room)
         }
       } catch (err) {

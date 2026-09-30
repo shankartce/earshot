@@ -72,6 +72,23 @@ export interface RoomMeta {
   hostId: string | null
 }
 
+/** Licences under which a listener may attest they can share a recording peer-to-peer. */
+export const LICENSES = {
+  own: 'My own music',
+  'cc-by': 'CC BY',
+  'cc-by-sa': 'CC BY-SA',
+  'cc-by-nc': 'CC BY-NC',
+  cc0: 'CC0 / Public domain',
+  other: 'Other licence that allows sharing',
+} as const
+export type License = keyof typeof LICENSES
+
+/** Someone online in the room who attested they may share this exact file (trackId). */
+export interface ShareOffer {
+  participantId: string
+  license: License
+}
+
 export interface RoomSnapshot extends RoomMeta {
   code: string
   settings: RoomSettings
@@ -80,6 +97,7 @@ export interface RoomSnapshot extends RoomMeta {
   playback: PlaybackState
   history: Track[] // recently played, newest first
   chat: ChatMessage[]
+  shares: Record<string, ShareOffer[]> // trackId -> offers (online sharers only)
   createdAt: number
   updatedAt: number
 }

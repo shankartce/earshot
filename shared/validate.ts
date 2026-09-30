@@ -1,7 +1,7 @@
 // Payload validators for the trust boundary. Each returns a clean value or null — never throws.
-import type { PlaybackCommand, QueueCommand } from './events.ts'
-import type { Profile, Readiness, RoomSettings, Track } from './types.ts'
-import { REACTIONS } from './types.ts'
+import type { PlaybackCommand, QueueCommand, Signal } from './events.ts'
+import type { License, Profile, Readiness, RoomSettings, Track } from './types.ts'
+import { LICENSES, REACTIONS } from './types.ts'
 
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 export const CODE_LENGTH = 5
@@ -97,6 +97,38 @@ export function parseSettingsPatch(x: unknown): (Partial<RoomSettings> & { name?
   if (x.name !== undefined) out.name = cleanText(x.name, 40) || 'Listening room'
   if (x.emoji !== undefined) out.emoji = cleanText(x.emoji, 4)
   return out
+}
+
+export const parseTrackId = (x: unknown): string | null => (typeof x === 'string' && TRACK_ID_RE.test(x) ? x : null)
+
+export const parseLicense = (x: unknown): License | null =>
+  typeof x === 'string' && Object.hasOwn(LICENSES, x) ? (x as License) : null
+
+const MAX_SDP = 16 * 1024
+const MAX_CANDIDATE = 1024
+
+/** WebRTC handshake messages: known types only, bounded sizes, nothing extra passed through. */
+export function parseSignal(x: unknown): Signal | null {
+  if (!isObj(x) || !isId(x.transferId)) return null
+  const transferId = x.transferId
+  switch (x.type) {
+    case 'request': {
+      const trackId = parseTrackId(x.trackId)
+      return trackId ? { type: 'request', transferId, trackId } : null
+    }
+    case 'offer': case 'answer':
+      return typeof x.sdp === 'string' && x.sdp.length > 0 && x.sdp.length <= MAX_SDP ? { type: x.type, transferId, sdp: x.sdp } : null
+    case 'ice': {
+      const c = x.candidate
+      if (!isObj(c) || typeof c.candidate !== 'string' || c.candidate.length > MAX_CANDIDATE) return null
+      const sdpMid = typeof c.sdpMid === 'string' && c.sdpMid.length <= 64 ? c.sdpMid : null
+      const sdpMLineIndex = Number.isInteger(c.sdpMLineIndex) ? (c.sdpMLineIndex as number) : null
+      return { type: 'ice', transferId, candidate: { candidate: c.candidate, sdpMid, sdpMLineIndex } }
+    }
+    case 'reject':
+      return x.reason === 'busy' || x.reason === 'unavailable' || x.reason === 'failed' ? { type: 'reject', transferId, reason: x.reason } : null
+  }
+  return null
 }
 
 export const parseReadiness = (x: unknown): Readiness | null =>
