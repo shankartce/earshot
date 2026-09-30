@@ -4,7 +4,7 @@
 import { computed, effect, signal } from '@preact/signals'
 import { positionAt } from '../../shared/playback.ts'
 import type { Readiness } from '../../shared/types.ts'
-import { getFile, localTracks } from '../library/library.ts'
+import { getFile, resolveLocal } from '../library/library.ts'
 import { clock, socket } from '../realtime/socket.ts'
 import { connection, currentItem, me, playback, room, toast } from '../state/room.ts'
 import { DEFAULT_DRIFT, decide, learnSeekLead, type DriftConfig } from '../sync/drift.ts'
@@ -129,14 +129,17 @@ export async function apply() {
     readiness.value = 'idle'
     return
   }
-  const blob = await getFile(item.track.id)
+  const local = resolveLocal(item.track)
+  const localId = local.status === 'ready' ? local.local.id : null
+  const blob = localId ? await getFile(localId) : null
   if (my !== seq) return
   if (!blob) {
     if (loadedId) unload()
     readiness.value = 'missing'
     return
   }
-  if (loadedId !== item.track.id) {
+  const key = `${item.track.id}>${localId}` // room song → which local file plays it
+  if (loadedId !== key) {
     readiness.value = 'loading'
     const ok = await loadBlob(blob)
     if (my !== seq) return
@@ -146,7 +149,7 @@ export async function apply() {
       toast("We couldn't read this audio file.", { tone: 'error' })
       return
     }
-    loadedId = item.track.id
+    loadedId = key
   }
 
   const pb = r.playback
@@ -174,7 +177,8 @@ export async function apply() {
 const applyKey = computed(() => {
   const r = room.value
   const item = currentItem.value
-  return r ? `${r.code}|${r.playback.version}|${item?.track.id}|${item ? localTracks.value.has(item.track.id) : ''}` : ''
+  const local = item ? resolveLocal(item.track) : null
+  return r ? `${r.code}|${r.playback.version}|${item?.track.id}|${local?.status === 'ready' ? local.local.id : ''}` : ''
 })
 effect(() => { applyKey.value; apply() })
 
@@ -210,7 +214,7 @@ effect(() => { clearInterval(loop); loop = setInterval(check, prefs.value.checkM
 audio.addEventListener('ended', () => {
   const r = room.value
   const item = currentItem.value
-  if (r?.playback.isPlaying && item && loadedId === item.track.id) playback({ type: 'ENDED', itemId: item.id })
+  if (r?.playback.isPlaying && item && loadedId?.startsWith(`${item.track.id}>`)) playback({ type: 'ENDED', itemId: item.id })
 })
 
 // Tab sleeping / device wake: timers were throttled and the clock may have jumped — resync.

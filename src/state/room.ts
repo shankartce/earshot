@@ -2,7 +2,8 @@
 // ask it to change things via commands. Reconnects re-join with the saved token and take a fresh snapshot.
 import { computed, signal } from '@preact/signals'
 import type { Ack, Joined, PlaybackCommand, QueueCommand, RoomPeek } from '../../shared/events.ts'
-import type { Participant, Profile, RoomSettings, RoomSnapshot } from '../../shared/types.ts'
+import type { Participant, Profile, QueueState, RoomSettings, RoomSnapshot } from '../../shared/types.ts'
+import { applyQueue } from '../../server/state/room.ts' // the same pure reducer the server runs
 import { clock, socket } from '../realtime/socket.ts'
 import { forgetRoom, profile, rememberRoom, tokenFor } from './profile.ts'
 
@@ -82,7 +83,33 @@ async function command(event: 'playback:command' | 'queue:command' | 'room:setti
 type WithoutVersion<T> = T extends unknown ? Omit<T, 'baseVersion'> : never
 export const playback = (cmd: WithoutVersion<PlaybackCommand>) =>
   command('playback:command', { ...cmd, baseVersion: room.value?.playback.version ?? 0 })
-export const queue = (cmd: QueueCommand) => command('queue:command', cmd)
+
+// ---- queue with optimistic updates ----
+// Edits show instantly (predicted with the server's own reducer), then the server's answer replaces
+// the prediction. Commands go out one at a time so quick successive moves don't trip the stale check.
+
+type Move = Extract<QueueCommand, { type: 'MOVE' }>
+export type QueueInput = Exclude<QueueCommand, Move> | Omit<Move, 'baseVersion'>
+
+export const pendingQueue = signal<QueueState | null>(null)
+export const shownQueue = computed<QueueState>(() => pendingQueue.value ?? room.value?.queue ?? { items: [], version: 0 })
+let inflight = 0
+let chain: Promise<unknown> = Promise.resolve()
+
+export function queue(input: QueueInput) {
+  const r = room.value
+  if (r && input.type !== 'ADD') {
+    const base = pendingQueue.value ?? r.queue
+    const draft = { ...r, tokens: {}, queue: structuredClone(base), playback: { ...r.playback } }
+    const predicted = applyQueue(draft, me.value, { ...input, baseVersion: base.version } as QueueCommand, Date.now(), () => 'pending')
+    if (predicted.ok) pendingQueue.value = draft.queue
+  }
+  inflight++
+  const send = () => command('queue:command', input.type === 'MOVE' ? { ...input, baseVersion: room.value?.queue.version ?? 0 } : input)
+  const p = chain.then(send, send)
+  chain = p
+  return p.finally(() => { if (--inflight === 0) pendingQueue.value = null })
+}
 export const updateSettings = (patch: Partial<RoomSettings> & { name?: string; emoji?: string }) =>
   command('room:settings', patch)
 

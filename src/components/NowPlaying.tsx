@@ -1,7 +1,7 @@
 // The stage: artwork, song info, progress, transport controls, and the local-readiness state.
 import { useState } from 'preact/hooks'
 import { isIOS, prefs, readiness, roomPosition, setPrefs, tuneIn, unlockAudio } from '../audio/player.ts'
-import { importFiles } from '../library/library.ts'
+import { artUrls, confirmMatch, importFiles, rejectMatch, resolveLocal } from '../library/library.ts'
 import { reportImport } from '../state/actions.ts'
 import { canControl, currentItem, participantById, playback, room, toast } from '../state/room.ts'
 import { fmtTime } from '../utils/format.ts'
@@ -16,12 +16,14 @@ export function NowPlaying() {
   const pb = r.playback
   const t = item?.track
   const addedBy = item && participantById(item.addedBy)
+  const local = t ? resolveLocal(t) : null
+  const art = local?.status === 'ready' ? artUrls.value.get(local.local.id) : null
 
   return (
     <section class={`stage${pb.isPlaying ? ' is-playing' : ''}`} aria-label="Now playing">
       <div class="art-wrap">
         <div class="vinyl" aria-hidden="true" />
-        <Cover id={t?.id} class="art" spinning={pb.isPlaying} />
+        <Cover id={t?.id} art={art} class="art" key={t?.id} />
       </div>
 
       <div class="np-meta">
@@ -57,6 +59,26 @@ function Readiness() {
     )
   }
   if (state === 'missing') {
+    const local = resolveLocal(item.track)
+    if (local.status === 'probable') {
+      const c = local.local
+      return (
+        <div class="banner warn" role="status">
+          <Icon name="music" />
+          <div class="grow">
+            <p class="strong">Is this the same song?</p>
+            <p class="muted small">Your library has “{c.title}”{c.artist ? ` by ${c.artist}` : ''} ({fmtTime(c.duration)}). It's a different file, so it may not line up perfectly.</p>
+          </div>
+          <div class="row">
+            <button class="btn sm" onClick={() => rejectMatch(item.track.id, c.id)}>Not the same</button>
+            <button class="btn sm primary" onClick={() => {
+              confirmMatch(item.track.id, c.id)
+              toast("You're ready — syncing with the room…")
+            }}>Use my copy</button>
+          </div>
+        </div>
+      )
+    }
     const have = room.value!.participants.filter(p => p.isOnline && p.readiness === 'ready')
     return (
       <div class="banner warn" role="status">
@@ -71,8 +93,10 @@ function Readiness() {
         <FileButton class="btn" multiple={false} label="Add your copy of this song" onFiles={async files => {
           const res = await importFiles(files)
           reportImport(res)
-          if (res.tracks.some(x => x.id === item.track.id)) toast("You're ready — syncing with the room…")
-          else if (res.tracks.length) toast("That file isn't an exact match for this song.", { tone: 'error' })
+          const now = resolveLocal(item.track).status
+          if (now === 'ready') toast("You're ready — syncing with the room…")
+          else if (now === 'missing' && res.tracks.length) toast("That file doesn't seem to be this song.", { tone: 'error' })
+          // 'probable' → the banner above asks you to confirm
         }}>Add file</FileButton>
       </div>
     )

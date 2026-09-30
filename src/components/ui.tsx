@@ -1,8 +1,9 @@
 // Small shared building blocks.
 import type { ComponentChildren } from 'preact'
-import { useEffect, useId, useRef } from 'preact/hooks'
+import { useEffect, useId, useRef, useState } from 'preact/hooks'
 import type { Avatar as AvatarT } from '../../shared/types.ts'
 import { syncStatus } from '../audio/player.ts'
+import { filesFromDrop } from '../library/library.ts'
 import { toasts } from '../state/room.ts'
 import { hues } from '../utils/format.ts'
 import { Icon } from './icons.tsx'
@@ -98,18 +99,56 @@ export function Empty({ icon, title, children }: { icon: Parameters<typeof Icon>
 }
 
 /** A styled file picker. The real <input> stays focusable (visually hidden) for keyboard users. */
-export function FileButton({ onFiles, children, class: cls = 'btn', multiple = true, label }: {
-  onFiles: (files: File[]) => void; children: ComponentChildren; class?: string; multiple?: boolean; label?: string
+export function FileButton({ onFiles, children, class: cls = 'btn', multiple = true, label, folder }: {
+  onFiles: (files: File[]) => void; children: ComponentChildren; class?: string; multiple?: boolean; label?: string; folder?: boolean
 }) {
   return (
     <label class={`${cls} file-btn`}>
       {children}
       <input type="file" accept="audio/*,.mp3,.m4a,.flac,.ogg,.opus,.wav,.aac" multiple={multiple} class="sr-only" aria-label={label}
+        {...(folder ? { webkitdirectory: '' } : {})}
         onChange={e => {
           const files = [...(e.currentTarget.files ?? [])]
           e.currentTarget.value = ''
           if (files.length) onFiles(files)
         }} />
     </label>
+  )
+}
+
+/** Accepts dropped files and whole folders. */
+export function DropZone({ onFiles, children, class: cls = '' }: { onFiles: (f: File[]) => void; children: ComponentChildren; class?: string }) {
+  const [over, setOver] = useState(false)
+  const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files')
+  return (
+    <div class={`dropzone ${cls}${over ? ' over' : ''}`}
+      onDragOver={e => { if (hasFiles(e)) { e.preventDefault(); setOver(true) } }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false) }}
+      onDrop={async e => {
+        if (!hasFiles(e)) return
+        e.preventDefault()
+        setOver(false)
+        onFiles(await filesFromDrop(e.dataTransfer!))
+      }}>
+      {children}
+    </div>
+  )
+}
+
+/** Destructive action that needs a second press within 3s. */
+export function ConfirmButton({ onConfirm, children, confirmLabel = 'Tap again to confirm', class: cls = 'btn sm ghost', label }: {
+  onConfirm: () => void; children: ComponentChildren; confirmLabel?: string; class?: string; label?: string
+}) {
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (!armed) return
+    const t = setTimeout(() => setArmed(false), 3000)
+    return () => clearTimeout(t)
+  }, [armed])
+  return (
+    <button type="button" class={`${cls}${armed ? ' danger' : ''}`} aria-label={armed ? confirmLabel : label}
+      onClick={() => { if (armed) { setArmed(false); onConfirm() } else setArmed(true) }}>
+      {armed ? confirmLabel : children}
+    </button>
   )
 }

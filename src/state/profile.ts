@@ -19,11 +19,12 @@ const store: Storage | null = (() => {
   try { return isDemoTab ? sessionStorage : localStorage } catch { return null }
 })()
 
-function read<T>(key: string, fallback: T): T {
+/** Per-identity storage (localStorage, or sessionStorage in a demo tab). */
+export function read<T>(key: string, fallback: T): T {
   try { return JSON.parse(store?.getItem(key) ?? 'null') ?? fallback } catch { return fallback }
 }
-function write(key: string, value: unknown) {
-  try { store?.setItem(key, JSON.stringify(value)) } catch { /* quota / private mode: identity just won't persist */ }
+export function write(key: string, value: unknown) {
+  try { store?.setItem(key, JSON.stringify(value)) } catch { /* quota / private mode: just won't persist */ }
 }
 
 const pick = <T,>(list: T[], seed: string) => list[[...seed].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % list.length]
