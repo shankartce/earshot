@@ -10,7 +10,7 @@ export function Landing() {
       <div class="rings" aria-hidden="true"><i /><i /><i /></div>
 
       <nav class="top-nav">
-        <a href="/" class="brand" aria-label="Free Jam home"><span class="brand-mark"><Equalizer /></span> Free Jam</a>
+        <a href="/" class="brand" aria-label="Earshot home"><span class="brand-mark"><Equalizer /></span> Earshot</a>
         <div class="row">
           <a href="/library" class="btn ghost sm">Library</a>
           <a href="/settings" class="icon-btn" aria-label="Settings"><Icon name="settings" /></a>
@@ -18,9 +18,9 @@ export function Landing() {
       </nav>
 
       <section class="hero">
-        <p class="eyebrow">Shared listening, local music</p>
-        <h1 class="display">Listen together,<br /><span class="grad">wherever you are.</span></h1>
-        <p class="lede">Create a room. Invite a friend. Press play. Everyone hears the same moment of the same song — from their own files.</p>
+        <p class="eyebrow">Listen together, wherever you are</p>
+        <h1 class="display">Come listen<br /><span class="grad">with me.</span></h1>
+        <p class="lede">Create a room. Invite a friend. Press play. You'll both hear the same moment of the same song — each from your own music, miles apart.</p>
         <div class="cta-row">
           <a href="/create" class="btn primary big"><Icon name="plus" /> Create a room</a>
           <a href="/join" class="btn big">Join a room</a>

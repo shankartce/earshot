@@ -15,4 +15,4 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   })
 }
 
-server.listen(PORT, () => console.log(`Free Jam running at http://localhost:${PORT}`))
+server.listen(PORT, () => console.log(`Earshot running at http://localhost:${PORT}`))

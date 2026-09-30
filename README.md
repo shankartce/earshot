@@ -1,149 +1,243 @@
-# Free Jam
+<div align="center">
 
-**Listen together, wherever you are.** Create a room, invite a friend, press play. Everyone hears the same moment of the same song, each from their **own** copy on their own device.
+# 🎧 Earshot
 
-The server only coordinates the room: who's here, what's queued, what's playing and where. **Audio is never uploaded, streamed or stored on the server.** No upload endpoint exists.
+### *Come listen with me.*
 
-## Quick start
+Listen to music together, in sync, from anywhere.<br>
+Everyone plays their **own** copy of each song, so your music never leaves your device.
 
-Requires **Node.js 22.18+**. The server runs TypeScript directly, with no build step for the server.
+[![MIT License](https://img.shields.io/badge/license-MIT-ff7a59.svg)](LICENSE)
+![Node 22.18+](https://img.shields.io/badge/node-%E2%89%A522.18-ffb454.svg)
+![Tests](https://img.shields.io/badge/tests-73%20passing-7ccf6a.svg)
+![Built with Preact + Socket.IO](https://img.shields.io/badge/built%20with-Preact%20%2B%20Socket.IO-b388ff.svg)
+
+<img src="docs/screenshots/room.jpg" alt="An Earshot room: the song playing with a ring visualizer, two friends in the room, the shared queue and chat" width="860">
+
+</div>
+
+---
+
+## What is Earshot?
+
+Earshot is a **shared listening room**. You open a room, send your friend a link, and press play. You both hear the same moment of the same song, even if you're in different cities.
+
+Unlike streaming services, Earshot doesn't stream anything. **Each person plays the song from their own device.** Earshot only keeps everyone's players in step: what's playing, whether it's paused, and where the song is. It works with the music you already own: MP3, FLAC, AAC/M4A, OGG, WAV and more.
+
+- 🔒 **Private by design.** Your audio files are never uploaded, anywhere.
+- ⚡ **Tightly in sync.** Listeners stay within a few tens of milliseconds of each other and correct themselves continuously.
+- 💬 **Feels like hanging out.** See who's listening, react to the drop, chat, and build the queue together.
+
+## ✨ Features
+
+| | |
+|---|---|
+| 🎵 **Synced playback** | Play, pause, seek and skip for everyone at once. Late joiners land at the right moment. |
+| 👥 **Presence** | See who's here and whether each friend is *Ready* or still needs the song. |
+| 📚 **Your library, saved** | Drop in files or whole folders. Tags and album art are read in your browser and remembered next visit. |
+| 🔍 **Smart matching** | Your file doesn't have to be byte-identical. Earshot spots *"that's the same song"* and asks before using it. |
+| 📋 **Shared queue** | Add, drag to reorder, *Play next*, remove. Everyone sees the same order instantly. |
+| ❤️ **Reactions & chat** | Float 🔥 ❤️ ✨ over the artwork for everyone, chat, react to messages, see who's typing. |
+| 🌈 **Visualizers** | Ring, bars, waveform or glow, driven by your own audio and computed only on your device. |
+| 🎤 **Synced lyrics** | Add a `.lrc` lyrics file and the lines light up in time with the room. |
+| 👑 **Host controls** | Choose who can control playback or edit the queue, and turn chat or reactions on or off. |
+| 📱 **Great on phones** | Bottom tabs, a mini-player that follows you around, and big touch-friendly controls. |
+
+<div align="center">
+<img src="docs/screenshots/landing.jpg" alt="Earshot home page: Come listen with me" width="560"><br><br>
+<img src="docs/screenshots/mobile-player.jpg" alt="Phone: now playing with ring visualizer" width="250">
+&nbsp;&nbsp;
+<img src="docs/screenshots/mobile-queue.jpg" alt="Phone: shared queue with mini-player" width="250">
+</div>
+
+---
+
+## 🚀 Run it in 1 minute
+
+You need [Node.js](https://nodejs.org) **22.18 or newer**.
+
+```bash
+git clone https://github.com/shankartce/earshot.git
+cd earshot
+npm install
+npm run dev
+```
+
+Open **http://localhost:5173** and create a room.
+
+> **Try it alone first:** in a room, open **Invite → "Open as Sam in a new tab"**. The new tab is a second person with their own library, so you can watch the two stay in sync.
+
+---
+
+## 🎶 How to use Earshot
+
+### 1. Create a room
+Click **Create a room**. Give it a name and an emoji (like *🚗 Late Night Drive*), then pick your display name and avatar. You'll get a short **room code** like `F7K9Q`.
+
+### 2. Invite your friends
+Click **Invite** to copy the link (for example `https://your-earshot.app/room/F7K9Q`) or share the code. Friends open the link, pick a name, and they're in. There are no accounts or sign-ups.
+
+### 3. Add your music
+Click **+ Add music**:
+- **Files / folders:** drop them in, or pick them. Tags and album art are read automatically.
+- **Library:** anything you've added before (it's remembered in your browser).
+- **Playlists:** queue a whole playlist you made on the **Library** page.
+
+Only the song's *details* (title, artist, length and a fingerprint) are shared with the room. **The audio stays on your device.**
+
+### 4. Press play ▶
+Everyone hears the same moment. If your browser asks, tap **"Tap to tune in"** once; browsers need one tap before they're allowed to play sound.
+
+### 5. Hang out
+- React with ❤️ 🔥 😂 😭 ✨ 🎵 🫶. Your reaction floats up on everyone's screen.
+- Chat in the side panel (on phones, use the **Chat** tab).
+- Switch the **visualizer** under the artwork, or open **Lyrics**.
+- Tap **⋯** on any queued song to *Play now*, *Play next*, move it, or remove it. On a computer you can also drag songs.
+
+### When a friend doesn't have the song
+That's fine. Nobody's music stops:
+- Friends who have it keep listening. Your friend sees **"This song isn't available on your device yet"**, and everyone else sees *"Local file missing"* next to their name.
+- They click **Add file** and pick their copy. If it's the same file, they join in right where the room is: *"You're ready — syncing with the room…"*.
+- If it's a **different copy** of the same song (a different rip or a remaster), Earshot asks *"Is this the same song?"*. After **Use my copy**, it remembers the choice.
+
+### Being the host
+Whoever creates the room is the host (👑). In **⚙ Room settings** the host can choose:
+
+| Setting | Options |
+|---|---|
+| Playback control | Host only / Everyone |
+| Queue editing | Host only / Everyone (people can always add songs and remove their own) |
+| Chat / Reactions | On / Off |
+
+If the host leaves, hosting passes to whoever has been in the room longest.
+
+### Coming back later
+Rooms are remembered for 7 days. The home page shows **Jump back in**, which returns you to your rooms as the same person, with the queue and chat where you left them.
+
+### Keyboard shortcuts
+<kbd>Space</kbd>/<kbd>K</kbd> play/pause · <kbd>J</kbd>/<kbd>L</kbd> back/forward 10 s · <kbd>N</kbd>/<kbd>P</kbd> next/previous · <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> move the focused song in the queue
+
+---
+
+## ❓ FAQ
+
+<details>
+<summary><b>Does Earshot upload or stream my music?</b></summary>
+
+No. There's no upload feature at all. Your files stay in your browser's private storage on your device. The server only learns song details such as *"Midnight City – M83, 4:03"* plus a fingerprint (a SHA-256 hash of the file), and who pressed play.
+</details>
+
+<details>
+<summary><b>Why does everyone need their own copy?</b></summary>
+
+Sharing audio between people would mean redistributing music, which Earshot doesn't do. Everyone brings music they already have; Earshot makes sure you all hear it at the same time.
+</details>
+
+<details>
+<summary><b>My friend has the "same" song but it shows as missing.</b></summary>
+
+Files are matched by their exact contents first. If your friend has a different rip, Earshot suggests it as a match when the title, artist and length (within 2 seconds) line up. They confirm with **Use my copy**. If the tags are very different, renaming the file to `Artist - Title.mp3` helps.
+</details>
+
+<details>
+<summary><b>It sounds slightly out of sync with my Bluetooth headphones.</b></summary>
+
+Bluetooth adds its own delay. Open **⚙ Settings → Speaker delay** and slide it up (100–250 ms is typical) until it lines up.
+</details>
+
+<details>
+<summary><b>It works on my computer but not on my phone over Wi-Fi.</b></summary>
+
+Browsers only allow the features Earshot needs (reading files, storing them, playing through Web Audio) on **secure (HTTPS) pages**. `http://localhost` counts as secure, but `http://192.168.x.x` does not. Use a free HTTPS tunnel such as `cloudflared tunnel --url http://localhost:5173`, or [host it](#-host-it-for-your-friends).
+</details>
+
+<details>
+<summary><b>Some of my songs disappeared from my library.</b></summary>
+
+Browsers may clear a site's stored files when the device runs low on space, unless the site is granted "persistent" storage. Earshot tells you which songs were cleared; just add the files again. Keep your original music files somewhere safe.
+</details>
+
+<details>
+<summary><b>Which browsers work?</b></summary>
+
+Earshot is built for recent Chrome, Edge, Firefox and Safari, on desktop and phone. So far it has been tested mainly in Chrome; if something misbehaves in your browser, please [open an issue](../../issues). On iPhone, keep the tab in front: iOS may pause audio in the background, and Earshot re-syncs as soon as you're back.
+</details>
+
+<details>
+<summary><b>Is there a size limit on rooms?</b></summary>
+
+Rooms are designed for small groups of friends and allow up to 50 people. The queue holds up to 500 songs.
+</details>
+
+---
+
+## 🌍 Host it for your friends
+
+Earshot is a single Node.js app. Anywhere that runs Node with **WebSockets** and **HTTPS** works: Render, Fly.io, Railway, or a small VPS. (Serverless function platforms don't fit, because rooms live in one long-running server.)
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173 (app + realtime server in one process)
+npm run build
+npm start          # serves the app + realtime server on $PORT (default 3000)
 ```
 
-Try it as two people on one computer:
+| Environment variable | Default | What it does |
+|---|---|---|
+| `PORT` | `3000` | Port to listen on |
+| `DATA_FILE` | `data/rooms.json` | Where rooms are saved. Put it on a persistent disk so rooms survive restarts. |
 
-1. Create a room.
-2. Open **Invite → Demo mode → "Open as Sam in a new tab"**. Demo tabs get their own identity and their own library.
-3. Add a few audio files in each tab. Songs whose files match are recognized automatically.
+**Render example:** create a *Web Service* from this repo with build command `npm install && npm run build`, start command `npm start`, and optionally a persistent disk mounted at `/data` with `DATA_FILE=/data/rooms.json`.
 
-Other commands:
+---
+
+## 🛠 For developers
 
 ```bash
-npm test           # 73 unit + multi-client integration tests (Vitest)
-npm run typecheck
-npm run build      # client → dist/
-npm start          # production server on http://localhost:3000
+npm run dev         # app + realtime server in one process (http://localhost:5173)
+npm test            # 73 unit + multi-client integration tests (Vitest)
+npm run typecheck   # TypeScript
+npm run build       # production client → dist/
+npm start           # production server (serves dist/)
 ```
 
-| Env var | Default | |
-|---|---|---|
-| `PORT` | `3000` | HTTP + WebSocket port |
-| `DATA_FILE` | `data/rooms.json` | where room memory is saved (the dev server uses `data/rooms.dev.json`) |
+**Stack:** Preact + Signals + Vite on the client; Express + Socket.IO on the server. The server runs `.ts` files directly on Node 22.18+, with no build step for it. Tag reading uses [music-metadata](https://github.com/Borewit/music-metadata), loaded only when needed.
 
-### Phones and other devices: use HTTPS
+### How the sync works
+- **The server owns the timeline.** Playback is `{ itemId, isPlaying, position, serverTimestamp, version }`. Where the song is at any moment follows from that, using the server's clock only ([`shared/playback.ts`](shared/playback.ts)).
+- **Clock sync.** Each client pings the server 5 times, keeps the fastest round trip to estimate its clock offset, and repeats every 30 s and on wake-up ([`src/sync/clock.ts`](src/sync/clock.ts)).
+- **Drift correction** runs about once a second ([`src/sync/drift.ts`](src/sync/drift.ts)):
+  - under 50 ms: nothing;
+  - 50–250 ms: gently nudge playback speed (at most ±5%, pitch preserved);
+  - over 250 ms: seek, aiming ahead by a seek delay learned per device.
+- **No race conditions.** Every command carries the version it was based on. If two people press at once, the first wins and the second is told it was too late. The server also moves on by itself if nobody reports that a song ended.
 
-Browsers only enable the APIs this app needs on secure origins: file hashing (`crypto.subtle`), the private file store (OPFS) and Web Audio. `localhost` counts as secure. `http://192.168.x.x` from your phone does **not**, and importing music there will fail. To test on a phone, use an HTTPS tunnel (for example `cloudflared tunnel --url http://localhost:5173`) or deploy it.
-
-### Deploying
-
-- It needs a host with long-lived WebSockets and **a single instance**, because rooms live in memory and are snapshotted to one JSON file. Render, Fly.io and Railway all work.
-- Serverless platforms (for example Vercel Functions) are not a fit.
-- Put `DATA_FILE` on a persistent disk if rooms should survive redeploys.
-- Serve the app over HTTPS (see above).
-
-## What's in it
-
-- **Rooms:**
-  - A 5-character code like `F7K9Q` and an invite link at `/room/F7K9Q`.
-  - The room name and emoji, your display name, and an emoji avatar.
-  - A join preview ("🌙 Late Night Drive · Alex is listening").
-  - "Jump back in" on the home page to resume rooms you've been in.
-- **Synced playback:** play, pause, seek, next and previous, and "Tap to tune in" when the browser blocks autoplay. Lock-screen and media-key controls also work.
-- **Presence:** who's online or away, and whether each person can hear the current song (Ready / Local file missing / Needs a tap). Joined and left notices appear, with a 30-second grace period for quick reconnects.
-- **Host or collaborative:** the host decides who controls playback and who edits the queue, and can turn chat and reactions on or off. Everyone can always add songs and remove their own. If the host leaves, control passes to whoever has been there longest.
-- **Local library** (`/library`):
-  - Add files or whole folders, or drag and drop.
-  - Tags and embedded artwork are read in the browser.
-  - Search, sort by title/artist/album/recently added, playlists, and removal. Storage usage is shown.
-  - Files are kept in the browser's private storage, so the library survives reloads.
-- **Queue:** drag to reorder, or use the "⋯" sheet (Play now / Play next / Move / Remove). Alt+↑/↓ moves a song. Clear, "Recently played", and instant updates that the server then confirms.
-- **Social:** chat (typing indicator, unread count, reactions on messages) and reactions to the music that float over the artwork for everyone.
-- **Now playing:** artwork (a generated cover if you don't have the file), elapsed and remaining time, and visualizers (Ring, Bars, Waveform, Glow) analysed locally. Synced lyrics come from your own `.lrc` files.
-- **Phones:** bottom tabs (Room / Queue / Chat / Library) and a persistent mini-player.
-- **Accessibility:** keyboard shortcuts (Space/K, J/L, N/P), focus management, screen-reader announcements, and support for `prefers-reduced-motion`.
-
-## How synchronization works
-
-The **room state on the server is authoritative**. The local `<audio>` element is only the playback mechanism.
-
-1. **Server timeline.** `PlaybackState = { itemId, isPlaying, position, serverTimestamp, version }`. The room's playhead at any server time `t` is `position + (t − serverTimestamp)` while playing ([shared/playback.ts](shared/playback.ts)). Every timestamp is the server's; client times are never trusted. Pause positions are computed by the server, and seeks are clamped to the song length.
-2. **Clock sync.** Each client pings the server 5 times and keeps the fastest round trip: `offset = serverNow − (t0 + t1) / 2`. It repeats every 30 s, on reconnect and when a tab wakes up ([src/sync/clock.ts](src/sync/clock.ts)).
-3. **Drift correction** runs about once a second while playing ([src/sync/drift.ts](src/sync/drift.ts), [src/audio/player.ts](src/audio/player.ts)):
-
-   | drift | action |
-   |---|---|
-   | < 50 ms | nothing |
-   | 50–250 ms | nudge `playbackRate` (at most ±5%, pitch preserved) until within 25 ms (hysteresis) |
-   | > 250 ms | seek, aiming ahead by a per-device *learned* seek delay, then a 1.5 s cooldown |
-
-   Thresholds and a **speaker delay** (for Bluetooth) are adjustable in `/settings`.
-4. **Conflicts.** Playback commands carry `baseVersion`. If two people act at once, the first wins and the second is told it was stale. Queue edits target item ids, and moves are version-checked. When a song ends, every client reports it but only the first report counts. If no one reports it (for example, nobody has the file), a server timer moves to the next song.
-5. **Reconnects.** Socket.IO reconnects automatically. The client re-syncs its clock, rejoins with its private session token, takes a fresh snapshot, reloads the local file, seeks and resumes.
-
-In testing, two tabs stayed within about 10–30 ms of the room timeline.
-
-## Track identity
-
-- A song's id is `sha256:<hash of the file>`, computed in a Web Worker. Filenames don't matter.
-- If you don't have that exact file, the app looks for a **probable match**: same normalized title and artist, and length within 2 s. It asks *"Is this the same song?"*, and remembers "Use my copy". "Not the same" is remembered until you reload.
-- Only `{ id, title, artist, album, duration }` is ever sent. Artwork stays local; people without the file see a cover generated from the hash.
-
-## Project layout
-
+### Project layout
 ```
-shared/        types, typed Socket.IO events, payload validators, playhead math (used by both sides)
-server/
-  app.ts       Express: static client, SPA routes, security headers (CSP etc.), no upload routes
-  index.ts     production entry        vite-plugin.ts  dev: realtime inside Vite's server
-  state/room.ts        pure room reducer (playback, queue, presence, chat), also used by the client
-                       to predict queue edits instantly
-  rooms/store.ts       rooms in memory + debounced JSON snapshot, 7-day expiry
-  websocket/handlers.ts  validate → rate-limit → apply → broadcast changed slice
-  rateLimit.ts         token buckets per socket
-src/
-  audio/       player.ts (sync engine), visualizer.ts (drawing)
-  sync/        clock.ts, drift.ts
-  library/     library.ts (OPFS + index), hash.worker.ts, metadata.ts, match.ts
-  lyrics/      lrc.ts (parser), lyrics.ts (provider list, ready for a licensed API)
-  state/       room.ts (server mirror + commands), social.ts, profile.ts, ui.ts, actions.ts
-  components/  pages/  styles/ (tokens.css design tokens, app.css)
-tests/         room reducer, validators, sync math, library matching, metadata, LRC,
-               HTTP surface, and multi-client Socket.IO scenarios
+shared/    types, typed socket events, input validators, playhead math (used by both sides)
+server/    app.ts (HTTP + security headers) · state/room.ts (pure room logic)
+           rooms/store.ts (memory + JSON snapshot) · websocket/handlers.ts · rateLimit.ts
+src/       audio/ (sync player, visualizer) · sync/ · library/ (storage, hashing worker,
+           tags, matching) · lyrics/ · state/ · components/ · pages/ · styles/
+tests/     room logic, sync math, matching, tag parsing, lyrics, HTTP, multi-client scenarios
 ```
 
-## Realtime events
+See [`CLAUDE.md`](CLAUDE.md) for the design rules the project must keep: audio never leaves the device, the server is authoritative, and every command is versioned.
 
-| Client → server | | Server → client | |
-|---|---|---|---|
-| `clock:ping` | clock sync | `room:state` | full snapshot (join / reconnect) |
-| `room:create` / `room:join` / `room:peek` / `room:leave` | rooms | `room:patch` | only the changed slice (`playback`, `queue`, `participants`, `settings`, `meta`, `history`) |
-| `playback:command` | `PLAY` `PAUSE` `SEEK` `NEXT` `PREVIOUS` `PLAY_ITEM` `ENDED` + `baseVersion` | `presence:joined` / `presence:left` | |
-| `queue:command` | `ADD` `REMOVE` `MOVE` `PLAY_NEXT` `CLEAR` | `chat:message` / `chat:reactions` / `chat:typing` | |
-| `room:settings`, `status:update` | host settings, your readiness | `reaction` | floating reaction |
-| `chat:send` / `chat:typing` / `chat:react` / `reaction:send` | social | | |
+### Contributing
+Issues and pull requests are welcome. Please run `npm test` and `npm run typecheck` before opening a PR, and keep the golden rule: **audio never leaves the listener's device.**
 
-Types are in [shared/events.ts](shared/events.ts). Every payload is validated ([shared/validate.ts](shared/validate.ts)) and rate-limited per socket.
+---
 
-## Security notes
+## 🔒 Privacy & security
 
-- Chat text has control and bidi-override characters stripped, is length-capped, and is rendered as text, never HTML.
-- Session tokens are secret and never broadcast; public participant ids can't be used to impersonate someone.
-- Socket messages are capped at 256 KB. Only GET and HEAD are served over HTTP.
-- CSP, `nosniff`, `no-referrer` and a restrictive `Permissions-Policy` are set on every response.
+- No upload endpoints. The server only accepts page loads over HTTP; everything else happens over the realtime connection, with messages capped at 256 KB.
+- Every message is validated and rate-limited. Chat is shown as plain text only, never as HTML.
+- Your seat in a room is a private token kept in your browser, never shown to others.
+- A strict Content Security Policy and related headers are sent on every page.
+- Visualizers and lyrics are computed on your device.
 
-## Testing
+## 📄 License
 
-`npm test` covers the room reducer (every playback and queue operation, permissions, host handoff, stale and conflicting commands), clock and drift math, validators, rate limits, fuzzy matching, tag parsing on generated MP3/WAV/corrupted files, and the LRC parser. It also runs real Socket.IO scenarios with 2–3 clients, simulated latency, clocks set up to 90 s wrong, reconnects, restarts with persistence, concurrent queue edits, chat and reactions.
+[MIT](LICENSE) © 2026 shankartce
 
-Browser-only behaviour (the private file store, `<audio>`, Web Audio, layout) was verified by hand in Chrome. There are no automated browser tests.
-
-## Known limits
-
-- One server instance. Scaling out would need shared room state (for example Redis) and sticky sessions.
-- No accounts. Your seat in a room is a private token kept in this browser.
-- Room codes (about 33 million combinations) are guessable at scale. Joins and peeks are rate-limited per connection, not per IP.
-- iOS may pause background audio. The app re-syncs when you come back, and asks for a tap if needed.
-- Lyrics come only from your own `.lrc` files. Nothing is scraped.
+<div align="center"><sub>Made for listening together. 🎧</sub></div>

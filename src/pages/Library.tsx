@@ -5,8 +5,8 @@ import { matchesSearch } from '../components/AddMusic.tsx'
 import { Icon } from '../components/icons.tsx'
 import { ConfirmButton, Cover, DropZone, Empty, FileButton } from '../components/ui.tsx'
 import {
-  addToPlaylist, artUrls, createPlaylist, deletePlaylist, importFiles, importing, libraryReady, localTracks,
-  persistentStorage, playlists, removeTrack, sortedTracks, storageUsage, updatePlaylist, type LocalTrack, type Playlist,
+  addToPlaylist, artUrls, createPlaylist, deletePlaylist, importFiles, importing, libraryReady, localTracks, lostTracks,
+  persistentStorage, storagePersisted, playlists, removeTrack, sortedTracks, storageUsage, updatePlaylist, type LocalTrack, type Playlist,
 } from '../library/library.ts'
 import { queueTracks, reportImport } from '../state/actions.ts'
 import { room, toast } from '../state/room.ts'
@@ -57,8 +57,13 @@ export function Library() {
           </div>
         </header>
 
-        {!persistentStorage.value && (
+        {!persistentStorage.value ? (
           <p class="note"><Icon name="warn" size={16} /> This browser won't keep your files after you leave (private browsing?). They'll work for this visit.</p>
+        ) : storagePersisted.value === false && count > 0 && (
+          <p class="note"><Icon name="warn" size={16} /> Your browser may clear stored songs if it runs low on space. Keep your original files — you can always add them again.</p>
+        )}
+        {lostTracks.value.length > 0 && (
+          <p class="note"><Icon name="warn" size={16} /> Your browser cleared {lostTracks.value.length} song{lostTracks.value.length === 1 ? '' : 's'} since your last visit: {lostTracks.value.slice(0, 3).map(t => `“${t.title}”`).join(', ')}{lostTracks.value.length > 3 ? '…' : ''}. Add the files again to bring them back.</p>
         )}
         {importing.value && (
           <p class="import-progress" role="status">

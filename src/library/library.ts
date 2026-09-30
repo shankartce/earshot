@@ -55,12 +55,42 @@ function save() {
   } satisfies SavedLibrary), 250)
 }
 
+/** Songs whose files the browser deleted since the last visit (it may evict non-persistent storage). */
+export const lostTracks = signal<LocalTrack[]>([])
+/** Whether the browser promised not to evict our storage (null = unknown / unsupported). */
+export const storagePersisted = signal<boolean | null>(null)
+navigator.storage?.persisted?.().then(p => { storagePersisted.value = p }).catch(() => {})
+
+/** The index can outlive the files (browser eviction, cleared site data): keep only songs we can still play. */
+async function keepPlayable(tracks: LocalTrack[]): Promise<LocalTrack[]> {
+  let audio: FileSystemDirectoryHandle | null = null
+  try { audio = await dir('audio') } catch { /* no OPFS at all */ }
+  const ok = await Promise.all(tracks.map(async t => {
+    if (!audio) return false
+    try { return (await (await audio.getFileHandle(hexOf(t.id))).getFile()).size > 0 } catch { return false }
+  }))
+  const lost = tracks.filter((_, i) => !ok[i])
+  if (lost.length) lostTracks.value = [...lostTracks.value, ...lost]
+  return tracks.filter((_, i) => ok[i])
+}
+
+/** Drop songs from the index (their files are gone), keeping playlists and matches consistent. */
+function dropFromIndex(ids: string[]) {
+  if (!ids.length) return
+  const gone = new Set(ids)
+  localTracks.value = new Map([...localTracks.value].filter(([id]) => !gone.has(id)))
+  aliases.value = Object.fromEntries(Object.entries(aliases.value).filter(([, v]) => !gone.has(v)))
+  save()
+}
+
 async function load() {
   const saved = read<SavedLibrary | null>(KEY, null)
   if (saved?.v === 1) {
-    localTracks.value = new Map(saved.tracks.map(t => [t.id, t]))
-    playlists.value = saved.playlists
-    aliases.value = saved.aliases
+    const playable = await keepPlayable(saved.tracks)
+    localTracks.value = new Map(playable.map(t => [t.id, t]))
+    playlists.value = saved.playlists // playlists keep ids; songs reappear if you add them again
+    aliases.value = Object.fromEntries(Object.entries(saved.aliases).filter(([, v]) => localTracks.value.has(v)))
+    if (playable.length !== saved.tracks.length) save()
     const urls = new Map<string, string>()
     try {
       const art = await dir('art')
@@ -200,6 +230,12 @@ export async function getFile(localId: string): Promise<Blob | null> {
   try {
     return await (await (await dir('audio')).getFileHandle(hexOf(localId))).getFile()
   } catch {
+    // The file vanished mid-session: stop claiming we have it, so every screen says "missing".
+    const t = localTracks.value.get(localId)
+    if (t) {
+      lostTracks.value = [...lostTracks.value, t]
+      dropFromIndex([localId])
+    }
     return null
   }
 }

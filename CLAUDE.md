@@ -1,6 +1,6 @@
-# Claude notes for Free Jam
+# Claude notes for Earshot
 
-Shared listening rooms where each person plays their **own local copy** of each song. Stack: Vite + Preact + TypeScript client, Express + Socket.IO server that runs `.ts` directly on Node 22.18+.
+Earshot ("Come listen with me.") is a set of shared listening rooms where each person plays their **own local copy** of each song. Stack: Vite + Preact + TypeScript client, Express + Socket.IO server that runs `.ts` directly on Node 22.18+.
 
 ## Invariants (don't break these)
 - **Audio never leaves the device.** No upload endpoints, no body parsers, no audio/artwork in socket payloads. Only `Track = { id: 'sha256:…', title, artist, album, duration }` is shared.

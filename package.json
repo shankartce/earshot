@@ -1,9 +1,9 @@
 {
-  "name": "free-jam",
-  "version": "0.2.0",
+  "name": "earshot",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Listen together with local files. Audio never leaves your device.",
+  "description": "Come listen with me — synced listening rooms where everyone plays their own local music. Audio never leaves your device.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -30,5 +30,14 @@
   },
   "engines": {
     "node": ">=22.18"
-  }
+  },
+  "license": "MIT",
+  "keywords": [
+    "music",
+    "listening-party",
+    "sync",
+    "socket.io",
+    "preact",
+    "local-first"
+  ]
 }

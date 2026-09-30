@@ -11,7 +11,7 @@ import { addParticipant, applyPlayback, applyQueue, createRoom, setOffline } fro
 let server: http.Server
 let base: string
 const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'jam-dist-'))
-fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><title>Free Jam</title>')
+fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><title>Earshot</title>')
 
 beforeAll(async () => {
   server = createServer({ store: new RoomStore(null), dist })
@@ -33,7 +33,7 @@ describe('http surface', () => {
     for (const p of ['/', '/room/ABCDE', '/library', '/settings']) {
       const res = await fetch(base + p)
       expect(res.status).toBe(200)
-      expect(await res.text()).toContain('<title>Free Jam</title>')
+      expect(await res.text()).toContain('<title>Earshot</title>')
     }
   })
 

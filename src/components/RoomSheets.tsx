@@ -38,7 +38,7 @@ export function ShareSheet({ open, onClose }: { open: boolean; onClose: () => vo
         </div>
       </label>
       {nativeShare && (
-        <button class="btn block" onClick={() => navigator.share({ title: `Join ${r.name} on Free Jam`, url: link }).catch(() => {})}>
+        <button class="btn block" onClick={() => navigator.share({ title: `Come listen with me — ${r.emoji} ${r.name} on Earshot`, url: link }).catch(() => {})}>
           <Icon name="share" size={18} /> Share…
         </button>
       )}

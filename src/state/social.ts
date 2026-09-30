@@ -57,7 +57,7 @@ document.addEventListener('visibilitychange', () => { if (seen()) unread.value =
 // Unread count in the tab title so you notice from another tab.
 effect(() => {
   const r = room.value
-  const base = r ? `${r.emoji} ${r.name} · Free Jam` : 'Free Jam'
+  const base = r ? `${r.emoji} ${r.name} · Earshot` : 'Earshot'
   document.title = unread.value ? `(${unread.value}) ${base}` : base
 })
 

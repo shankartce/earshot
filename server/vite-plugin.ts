@@ -6,7 +6,7 @@ import { attachRealtime } from './websocket/handlers.ts'
 
 export function realtimeDevServer(): Plugin {
   return {
-    name: 'free-jam-realtime',
+    name: 'earshot-realtime',
     configureServer(server) {
       if (!server.httpServer) return
       const store = new RoomStore(path.resolve('data', 'rooms.dev.json'))
