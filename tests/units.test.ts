@@ -5,6 +5,7 @@ import {
 } from '../shared/validate.ts'
 import { Clock, estimate } from '../src/sync/clock.ts'
 import { DEFAULT_DRIFT, decide, learnSeekLead } from '../src/sync/drift.ts'
+import { groupMessages, typingText } from '../src/utils/chat.ts'
 
 const HASH = 'sha256:' + 'a'.repeat(64)
 
@@ -119,5 +120,19 @@ describe('drift correction', () => {
     const r = decide(0.2, { ...DEFAULT_DRIFT, gain: 10 })
     expect(r.kind === 'rate' && r.rate).toBeCloseTo(0.95)
     expect(decide(0.2, { ...DEFAULT_DRIFT, soft: 0.1 })).toEqual({ kind: 'seek' })
+  })
+})
+
+describe('chat display', () => {
+  const msg = (authorId: string, at: number) => ({ id: `${authorId}${at}`, authorId, text: 'x', at, reactions: {} })
+  it('groups consecutive messages by author within 3 minutes', () => {
+    const g = groupMessages([msg('a', 0), msg('a', 60_000), msg('b', 70_000), msg('b', 400_000), msg('a', 410_000)])
+    expect(g.map(x => [x.authorId, x.messages.length])).toEqual([['a', 2], ['b', 1], ['b', 1], ['a', 1]])
+  })
+  it('typing text', () => {
+    expect(typingText([])).toBe('')
+    expect(typingText(['Sam'])).toBe('Sam is typing…')
+    expect(typingText(['Sam', 'Kai'])).toBe('Sam and Kai are typing…')
+    expect(typingText(['Sam', 'Kai', 'Noor'])).toBe('Several people are typing…')
   })
 })

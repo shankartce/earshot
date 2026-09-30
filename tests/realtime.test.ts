@@ -241,6 +241,63 @@ describe('chat & abuse protection', () => {
     expect(got[0]).toBe('<b>hi</b>') // stored as text; the client renders it as text, never HTML
   })
 
+  it('typing reaches others but not yourself', async () => {
+    const { people } = await roomOf(2)
+    const seenBySam: string[] = []
+    const seenByAlex: string[] = []
+    people[1].s.on('chat:typing', id => seenBySam.push(id))
+    people[0].s.on('chat:typing', id => seenByAlex.push(id))
+    people[0].s.emit('chat:typing')
+    await until(() => seenBySam.length === 1)
+    expect(seenBySam[0]).toBe(people[0].view.you)
+    await sleep(50)
+    expect(seenByAlex).toEqual([])
+  })
+
+  it('room reactions and message reactions reach everyone', async () => {
+    const { people } = await roomOf(3)
+    const floats: string[] = []
+    people[2].s.on('reaction', r => floats.push(`${r.participantId}:${r.emoji}`))
+    people[1].s.emit('reaction:send', '🔥')
+    await until(() => floats.length === 1)
+    expect(floats[0]).toBe(`${people[1].view.you}:🔥`)
+
+    let msgId = ''
+    people[2].s.on('chat:message', m => { msgId = m.id })
+    await people[0].chat('this song!!')
+    await until(() => !!msgId)
+    const updates: Record<string, string[]>[] = []
+    people[0].s.on('chat:reactions', p => updates.push(p.reactions))
+    people[1].s.emit('chat:react', { messageId: msgId, emoji: '❤️' })
+    people[2].s.emit('chat:react', { messageId: msgId, emoji: '❤️' })
+    await until(() => updates.length === 2)
+    expect(updates[1]['❤️']).toHaveLength(2)
+  })
+
+  it('host can switch chat and reactions off', async () => {
+    const { people } = await roomOf(2)
+    const [alex, sam] = people
+    const settings = (p: object) => new Promise<Ack>(r => alex.s.emit('room:settings', p, r))
+    expect((await settings({ allowChat: false, allowReactions: false })).ok).toBe(true)
+    expect(await sam.chat('hello?')).toEqual({ ok: false, error: 'Chat is turned off in this room.' })
+    const floats: unknown[] = []
+    alex.s.on('reaction', r => floats.push(r))
+    sam.s.emit('reaction:send', '❤️')
+    await sleep(150)
+    expect(floats).toEqual([])
+    // guests can't turn it back on
+    expect((await new Promise<Ack>(r => sam.s.emit('room:settings', { allowChat: true }, r))).ok).toBe(false)
+  })
+
+  it('late joiners get recent chat history', async () => {
+    const { people, code } = await roomOf(1)
+    await people[0].chat('first')
+    await people[0].chat('second')
+    const late = client()
+    const r = await late.join(code, 'Sam')
+    expect(r.ok && r.state.chat.map(m => m.text)).toEqual(['first', 'second'])
+  })
+
   it('malformed payloads never crash the server', async () => {
     const { people } = await roomOf(1)
     const s = people[0].s as any

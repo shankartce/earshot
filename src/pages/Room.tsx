@@ -9,7 +9,11 @@ import { Icon } from '../components/icons.tsx'
 import { NowPlaying } from '../components/NowPlaying.tsx'
 import { Participants } from '../components/Participants.tsx'
 import { ProfileFields } from '../components/ProfileForm.tsx'
+import { Chat } from '../components/Chat.tsx'
 import { Queue } from '../components/Queue.tsx'
+import { Announcer } from '../components/Reactions.tsx'
+import { unread } from '../state/social.ts'
+import { useMedia } from '../utils/media.ts'
 import { copyText, inviteLink, SettingsSheet, ShareSheet } from '../components/RoomSheets.tsx'
 import { Avatar, ConnectionPill, Empty } from '../components/ui.tsx'
 import { clock } from '../realtime/socket.ts'
@@ -106,6 +110,7 @@ function RoomView() {
   const [h1, h2] = hues(currentItem.value?.track.id)
   const debug = new URLSearchParams(location.search).has('debug')
   const online = r.participants.filter(p => p.isOnline)
+  const wide = useMedia('(min-width: 1360px)')
 
   return (
     <div class={`room${r.playback.isPlaying ? ' playing' : ''}`} style={{ '--h1': h1, '--h2': h2 }}>
@@ -131,16 +136,18 @@ function RoomView() {
         </div>
       </header>
 
-      <main class="room-grid">
+      <main class={`room-grid${wide ? ' three' : ''}`}>
         <NowPlaying />
         <aside class="room-side">
           <Participants onInvite={() => setShare(true)} />
-          <Queue />
+          {wide ? <Queue /> : <QueueChatTabs />}
         </aside>
+        {wide && <aside class="room-chat"><Chat /></aside>}
       </main>
 
       <ShareSheet open={share} onClose={() => setShare(false)} />
       <SettingsSheet open={settings} onClose={() => setSettings(false)} />
+      <Announcer />
       {debug && (
         <pre class="debug" aria-hidden="true">
           {`offset ${clock.offset.toFixed(1)}ms  rtt ${clock.rtt.toFixed(1)}ms\n`}
@@ -148,6 +155,25 @@ function RoomView() {
           {`pb v${r.playback.version}  queue v${r.queue.version}`}
         </pre>
       )}
+    </div>
+  )
+}
+
+/** Below the wide breakpoint, queue and chat share one panel. */
+function QueueChatTabs() {
+  const [tab, setTab] = useState<'queue' | 'chat'>('queue')
+  return (
+    <div class="side-tabs">
+      <div class="segmented tabs" role="tablist" aria-label="Queue and chat">
+        <button role="tab" aria-selected={tab === 'queue'} class={tab === 'queue' ? 'on' : ''} onClick={() => setTab('queue')}>
+          <Icon name="list" size={16} /> Queue
+        </button>
+        <button role="tab" aria-selected={tab === 'chat'} class={tab === 'chat' ? 'on' : ''} onClick={() => setTab('chat')}>
+          <Icon name="chat" size={16} /> Chat
+          {unread.value > 0 && <span class="badge" aria-label={`${unread.value} unread`}>{unread.value}</span>}
+        </button>
+      </div>
+      {tab === 'queue' ? <Queue /> : <Chat />}
     </div>
   )
 }

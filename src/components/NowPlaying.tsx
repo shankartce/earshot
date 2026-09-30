@@ -6,6 +6,7 @@ import { reportImport } from '../state/actions.ts'
 import { canControl, currentItem, participantById, playback, room, toast } from '../state/room.ts'
 import { fmtTime } from '../utils/format.ts'
 import { Icon } from './icons.tsx'
+import { FloatingReactions, ReactionBar } from './Reactions.tsx'
 import { Avatar, Cover, Equalizer, FileButton } from './ui.tsx'
 
 const HOST_ONLY = 'Only the host can control playback in this room'
@@ -23,6 +24,7 @@ export function NowPlaying() {
     <section class={`stage${pb.isPlaying ? ' is-playing' : ''}`} aria-label="Now playing">
       <div class="art-wrap">
         <div class="vinyl" aria-hidden="true" />
+        <FloatingReactions />
         <Cover id={t?.id} art={art} class="art" key={t?.id} />
       </div>
 
@@ -40,6 +42,7 @@ export function NowPlaying() {
       <Readiness />
       {item && <Progress />}
       <Controls />
+      <ReactionBar />
       {!isIOS && <Volume />}
     </section>
   )
