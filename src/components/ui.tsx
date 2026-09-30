@@ -1,0 +1,115 @@
+// Small shared building blocks.
+import type { ComponentChildren } from 'preact'
+import { useEffect, useId, useRef } from 'preact/hooks'
+import type { Avatar as AvatarT } from '../../shared/types.ts'
+import { syncStatus } from '../audio/player.ts'
+import { toasts } from '../state/room.ts'
+import { hues } from '../utils/format.ts'
+import { Icon } from './icons.tsx'
+
+export function Avatar({ avatar, size = 36, label, ring }: { avatar: AvatarT; size?: number; label?: string; ring?: boolean }) {
+  return (
+    <span class={`avatar${ring ? ' ring' : ''}`} style={{ '--c': avatar.color, width: size, height: size, fontSize: size * 0.5 }}
+      role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : 'true'}>
+      {avatar.emoji}
+    </span>
+  )
+}
+
+/** Generated cover from the track hash (artwork stays local; this is what everyone can see). */
+export function Cover({ id, art, size, spinning, class: cls = '' }: { id?: string; art?: string | null; size?: number; spinning?: boolean; class?: string }) {
+  const [h1, h2] = hues(id)
+  return (
+    <div class={`cover ${spinning ? 'spinning' : ''} ${cls}`} style={{ '--h1': h1, '--h2': h2, width: size, height: size }} aria-hidden="true">
+      {art ? <img src={art} alt="" /> : <Icon name="music" size={size ? size * 0.34 : 48} />}
+    </div>
+  )
+}
+
+export function Equalizer({ playing = true, label }: { playing?: boolean; label?: string }) {
+  return (
+    <span class={`eq${playing ? '' : ' paused'}`} role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : 'true'}>
+      <i /><i /><i /><i />
+    </span>
+  )
+}
+
+export function Sheet({ open, onClose, title, children, wide }: {
+  open: boolean; onClose: () => void; title: string; children: ComponentChildren; wide?: boolean
+}) {
+  const ref = useRef<HTMLDialogElement>(null)
+  const id = useId()
+  useEffect(() => {
+    const d = ref.current
+    if (!d) return
+    if (open && !d.open) d.showModal()
+    if (!open && d.open) d.close()
+  }, [open])
+  return (
+    <dialog ref={ref} class={`sheet${wide ? ' wide' : ''}`} aria-labelledby={id} onClose={onClose}
+      onClick={e => { if (e.target === ref.current) onClose() }}>
+      <div class="sheet-body">
+        <header class="sheet-head">
+          <h2 id={id}>{title}</h2>
+          <button class="icon-btn" onClick={onClose} aria-label="Close"><Icon name="close" /></button>
+        </header>
+        {children}
+      </div>
+    </dialog>
+  )
+}
+
+export function Toasts() {
+  return (
+    <div class="toasts" role="status" aria-live="polite">
+      {toasts.value.map(t => (
+        <div key={t.id} class={`toast ${t.tone ?? ''}`}>
+          {t.who ? <Avatar avatar={t.who.avatar} size={24} /> : t.tone === 'error' ? <Icon name="warn" size={18} /> : null}
+          <span>{t.text}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const PILL = {
+  synced: { label: 'Synced', cls: 'ok' },
+  'catching-up': { label: 'Catching up', cls: 'warn' },
+  reconnecting: { label: 'Reconnecting', cls: 'bad' },
+}
+
+export function ConnectionPill() {
+  const s = PILL[syncStatus.value]
+  return (
+    <span class={`pill conn ${s.cls}`} role="status" aria-label={`Connection: ${s.label}`}>
+      <span class="dot" aria-hidden="true" />{s.label}
+    </span>
+  )
+}
+
+export function Empty({ icon, title, children }: { icon: Parameters<typeof Icon>[0]['name']; title: string; children?: ComponentChildren }) {
+  return (
+    <div class="empty">
+      <span class="empty-icon"><Icon name={icon} size={26} /></span>
+      <p class="empty-title">{title}</p>
+      {children && <div class="empty-body">{children}</div>}
+    </div>
+  )
+}
+
+/** A styled file picker. The real <input> stays focusable (visually hidden) for keyboard users. */
+export function FileButton({ onFiles, children, class: cls = 'btn', multiple = true, label }: {
+  onFiles: (files: File[]) => void; children: ComponentChildren; class?: string; multiple?: boolean; label?: string
+}) {
+  return (
+    <label class={`${cls} file-btn`}>
+      {children}
+      <input type="file" accept="audio/*,.mp3,.m4a,.flac,.ogg,.opus,.wav,.aac" multiple={multiple} class="sr-only" aria-label={label}
+        onChange={e => {
+          const files = [...(e.currentTarget.files ?? [])]
+          e.currentTarget.value = ''
+          if (files.length) onFiles(files)
+        }} />
+    </label>
+  )
+}

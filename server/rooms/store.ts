@@ -62,6 +62,13 @@ export class RoomStore {
     }, 1000)
   }
 
+  /** Final write; afterwards this store never touches disk again (e.g. superseded by a dev-server restart). */
+  close() {
+    this.flush()
+    if (this.timer) clearTimeout(this.timer)
+    this.file = null
+  }
+
   flush() {
     if (!this.file) return
     fs.mkdirSync(path.dirname(this.file), { recursive: true })

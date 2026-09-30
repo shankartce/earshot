@@ -29,6 +29,13 @@ export interface Joined {
   state: RoomSnapshot
 }
 
+/** Public preview of a room, shown before joining. */
+export interface RoomPeek {
+  name: string
+  emoji: string
+  online: Profile[]
+}
+
 export interface RoomPatch {
   playback?: PlaybackState
   queue?: QueueState
@@ -42,6 +49,7 @@ export interface ClientToServer {
   'clock:ping': (reply: (serverNow: number) => void) => void
   'room:create': (p: { name: string; emoji: string; profile: Profile }, reply: (r: Ack<Joined>) => void) => void
   'room:join': (p: { code: string; token?: string; profile: Profile }, reply: (r: Ack<Joined>) => void) => void
+  'room:peek': (code: string, reply: (r: Ack<RoomPeek>) => void) => void
   'room:leave': () => void
   'room:settings': (p: Partial<RoomSettings> & { name?: string; emoji?: string }, reply: (r: Ack) => void) => void
   'playback:command': (cmd: PlaybackCommand, reply: (r: Ack) => void) => void

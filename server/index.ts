@@ -20,7 +20,7 @@ attachRealtime(server, { store })
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
-    store.flush()
+    store.close()
     process.exit(0)
   })
 }

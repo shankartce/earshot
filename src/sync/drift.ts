@@ -15,10 +15,22 @@ export const DEFAULT_DRIFT: DriftConfig = {
 
 export type Correction = { kind: 'none' } | { kind: 'rate'; rate: number } | { kind: 'seek' }
 
-/** drift = local − expected, in seconds (positive means we're ahead of the room). */
-export function decide(drift: number, cfg: DriftConfig = DEFAULT_DRIFT): Correction {
+/**
+ * drift = local − expected, in seconds (positive means we're ahead of the room).
+ * `correcting`: hysteresis — once nudging, keep going until well inside the threshold so we
+ * don't flap on and off right at its edge.
+ */
+export function decide(drift: number, cfg: DriftConfig = DEFAULT_DRIFT, correcting = false): Correction {
   const a = Math.abs(drift)
-  if (a < cfg.ignore) return { kind: 'none' }
+  if (a < (correcting ? cfg.ignore / 2 : cfg.ignore)) return { kind: 'none' }
   if (a <= cfg.soft) return { kind: 'rate', rate: 1 - Math.sign(drift) * Math.min(cfg.maxRate, a * cfg.gain) }
   return { kind: 'seek' }
+}
+
+/**
+ * Seeking an <audio> element takes a moment, so a seek aimed at "now" lands slightly behind.
+ * Learn that lag from the drift measured after each seek and aim that far ahead next time.
+ */
+export function learnSeekLead(lead: number, driftAfterSeek: number): number {
+  return Math.min(0.15, Math.max(0, lead - driftAfterSeek * 0.3))
 }

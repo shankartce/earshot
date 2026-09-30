@@ -11,7 +11,7 @@ export function realtimeDevServer(): Plugin {
       if (!server.httpServer) return
       const store = new RoomStore(path.resolve('data', 'rooms.dev.json'))
       attachRealtime(server.httpServer as import('node:http').Server, { store })
-      server.httpServer.on('close', () => store.flush())
+      server.httpServer.on('close', () => store.close())
     },
   }
 }

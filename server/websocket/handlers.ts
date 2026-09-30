@@ -160,6 +160,16 @@ export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: Re
       done(enter(room, typeof p.token === 'string' ? p.token : undefined, p.profile))
     })
 
+    on('room:peek', (raw, reply) => {
+      const done = replyFn(reply)
+      if (!allow('join')) return done({ ok: false, error: 'Slow down a little and try again.' })
+      const code = parseCode(raw)
+      const room = code ? store.get(code) : undefined
+      if (!room) return done({ ok: false, error: "That room isn't available." })
+      const online = room.participants.filter(p => p.isOnline).map(({ displayName, avatar }) => ({ displayName, avatar }))
+      done({ ok: true, name: room.name, emoji: room.emoji, online })
+    })
+
     on('room:leave', () => leaveCurrent())
     on('disconnect', () => leaveCurrent())
 

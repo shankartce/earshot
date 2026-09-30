@@ -4,7 +4,7 @@ import {
   cleanText, parseCode, parsePlaybackCommand, parseProfile, parseQueueCommand, parseReaction, parseTrack,
 } from '../shared/validate.ts'
 import { Clock, estimate } from '../src/sync/clock.ts'
-import { DEFAULT_DRIFT, decide } from '../src/sync/drift.ts'
+import { DEFAULT_DRIFT, decide, learnSeekLead } from '../src/sync/drift.ts'
 
 const HASH = 'sha256:' + 'a'.repeat(64)
 
@@ -98,6 +98,21 @@ describe('drift correction', () => {
     expect(decide(0.25)).toMatchObject({ kind: 'rate' })
     expect(decide(0.26)).toEqual({ kind: 'seek' })
     expect(decide(-3)).toEqual({ kind: 'seek' })
+  })
+
+  it('hysteresis: keeps correcting until well inside the threshold', () => {
+    expect(decide(0.04)).toEqual({ kind: 'none' })
+    expect(decide(0.04, DEFAULT_DRIFT, true)).toMatchObject({ kind: 'rate' })
+    expect(decide(0.02, DEFAULT_DRIFT, true)).toEqual({ kind: 'none' })
+  })
+
+  it('learns seek latency: a seek that lands 60ms behind aims further ahead next time', () => {
+    let lead = 0.03
+    for (let i = 0; i < 6; i++) lead = learnSeekLead(lead, -0.06 + (lead - 0.03) * 1) // landing error shrinks as lead grows
+    expect(lead).toBeGreaterThan(0.08)
+    expect(lead).toBeLessThan(0.1)
+    expect(learnSeekLead(0.01, 0.2)).toBe(0) // never negative
+    expect(learnSeekLead(0.14, -1)).toBe(0.15) // capped: currentTime's own reporting lag must not be chased forever
   })
 
   it('rate deviation is capped and thresholds are configurable', () => {

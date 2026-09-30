@@ -119,6 +119,17 @@ describe('rooms & presence', () => {
     await until(() => people[2].view.state!.hostId === samId) // Sam joined before Jamie
   })
 
+  it('peek shows the room name and who is listening, without joining', async () => {
+    const { people, code } = await roomOf(2)
+    const visitor = client()
+    const r = await new Promise<any>(res => visitor.s.emit('room:peek', code, res))
+    expect(r).toMatchObject({ ok: true, name: 'Late Night', emoji: '🌙' })
+    expect(r.online.map((p: any) => p.displayName)).toEqual(['Alex', 'Sam'])
+    expect(JSON.stringify(r)).not.toContain(people[0].view.you) // no ids, no tokens
+    await until(() => people[0].view.state!.participants.length === 2)
+    expect(await new Promise<any>(res => visitor.s.emit('room:peek', 'ZZZZZ', res))).toMatchObject({ ok: false })
+  })
+
   it('a stolen participant id is useless without the token', async () => {
     const { people, code } = await roomOf(2)
     const intruder = client()
