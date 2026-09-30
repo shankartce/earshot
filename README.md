@@ -12,6 +12,9 @@ Everyone plays their **own** copy of each song, so your music never leaves your 
 ![Tests](https://img.shields.io/badge/tests-73%20passing-7ccf6a.svg)
 ![Built with Preact + Socket.IO](https://img.shields.io/badge/built%20with-Preact%20%2B%20Socket.IO-b388ff.svg)
 
+### **▶ [Try it live: earshot-30yv.onrender.com](https://earshot-30yv.onrender.com)**
+<sub>Free hosting: the first visit after a quiet spell can take about a minute to wake up.</sub>
+
 <img src="docs/screenshots/room.jpg" alt="An Earshot room: the song playing with a ring visualizer, two friends in the room, the shared queue and chat" width="860">
 
 </div>
