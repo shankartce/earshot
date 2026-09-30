@@ -8,16 +8,16 @@ import type { Readiness } from '../../shared/types.ts'
 import { artUrls, getFile, resolveLocal } from '../library/library.ts'
 import { clock, socket } from '../realtime/socket.ts'
 import { canControl, connection, currentItem, me, playback, room, roomCode, toast } from '../state/room.ts'
-import { DEFAULT_DRIFT, decide, learnSeekLead, type DriftConfig } from '../sync/drift.ts'
+import { DEFAULT_DRIFT, decide, learnSeekLead, migratePrefs, type DriftConfig } from '../sync/drift.ts'
 
 // ---- tunables (persisted; editable in /settings) ----
 function load<T>(key: string, fallback: T): T {
-  try { return { ...fallback, ...JSON.parse(localStorage.getItem(key) ?? '{}') } } catch { return fallback }
+  try { return { ...fallback, ...migratePrefs(JSON.parse(localStorage.getItem(key) ?? '{}')) } } catch { return fallback }
 }
-export interface PlayerPrefs extends DriftConfig { outputLatencyMs: number; volume: number }
-export const prefs = signal<PlayerPrefs>(load('jam:player', { ...DEFAULT_DRIFT, outputLatencyMs: 0, volume: 0.8 }))
+export interface PlayerPrefs extends DriftConfig { outputLatencyMs: number; volume: number; v: 2 }
+export const prefs = signal<PlayerPrefs>(load('jam:player', { ...DEFAULT_DRIFT, outputLatencyMs: 0, volume: 0.8, v: 2 }))
 export function setPrefs(patch: Partial<PlayerPrefs>) {
-  prefs.value = { ...prefs.value, ...patch }
+  prefs.value = { ...prefs.value, ...patch, v: 2 }
   try { localStorage.setItem('jam:player', JSON.stringify(prefs.value)) } catch { /* ignore */ }
 }
 
@@ -76,6 +76,8 @@ let lastSeekAt = 0
 let seekLead = 0.03 // s; learned per device (see learnSeekLead)
 let judgeSeek = false // next measurement is the result of a hard seek
 let correcting = false
+let strikes = 0 // consecutive readings past the threshold; one noisy reading shouldn't start a correction
+const setRate = (rate: number) => { if (audio.playbackRate !== rate) audio.playbackRate = rate } // each change is audible
 const failedKeys = new Set<string>() // local files this browser couldn't decode (don't retry on every action)
 
 // A pause from outside Earshot (OS, headphones unplugged, a call, another app). We only ever pause
@@ -120,23 +122,26 @@ const canCapture = typeof (audio as CapturableAudio).captureStream === 'function
 let ctx: AudioContext | null = null
 let analyser: AnalyserNode | null = null
 let tap: MediaStreamAudioSourceNode | null = null
+let captured: MediaStream | null = null // one capture for the element's lifetime
+let tappedTrack: MediaStreamTrack | null = null
 
 export const getAnalyser = () => (ctx?.state === 'running' && tap ? analyser : null)
 
 function connectTap() {
   if (!ctx || !analyser || !canCapture) return
   try {
+    captured ??= (audio as CapturableAudio).captureStream!()
+    const track = captured.getAudioTracks().find(t => t.readyState === 'live')
+    if (!track || track === tappedTrack) return // nothing new (a seek or resume); song changes bring a new track
     tap?.disconnect()
-    tap = null
-    const stream = (audio as CapturableAudio).captureStream!()
-    if (!stream.getAudioTracks().length) return // not playing real audio yet; retried on 'playing'
-    tap = ctx.createMediaStreamSource(stream)
+    tap = ctx.createMediaStreamSource(new MediaStream([track]))
     tap.connect(analyser)
+    tappedTrack = track
   } catch {
-    tap = null
+    tap = tappedTrack = null
   }
 }
-audio.addEventListener('playing', connectTap) // stream tracks change when the song changes
+audio.addEventListener('playing', connectTap)
 
 /** Call from a user gesture. Safe to call repeatedly. */
 export function enableAnalyser() {
@@ -223,6 +228,8 @@ export async function apply() {
   }
   if (loadedId !== key) {
     readiness.value = 'loading'
+    correcting = false
+    setRate(1)
     const ok = await loadBlob(blob)
     if (my !== seq) return
     if (!ok) {
@@ -244,8 +251,10 @@ export async function apply() {
     readiness.value = 'ready'
     return
   }
+  // A seek before the element starts is silent, so start exactly in step. Once it's playing, only a
+  // real jump (someone seeked, or we're way off) is worth an audible skip; the drift loop does the rest.
   const target = expected()
-  if (Math.abs(audio.currentTime - target) > prefs.value.soft) {
+  if (Math.abs(audio.currentTime - target) > (audio.paused ? 0.05 : prefs.value.soft)) {
     seekTo(target + seekLead)
     judgeSeek = true
   }
@@ -278,7 +287,7 @@ effect(() => {
   mutedHere.value = false
 })
 
-// Drift correction loop: compare, then nudge playbackRate or hard-seek.
+// Drift correction loop: compare, then change speed slightly or (rarely) jump.
 function check() {
   const r = room.value
   if (!r?.playback.isPlaying || readiness.value !== 'ready' || !loadedId) {
@@ -293,15 +302,21 @@ function check() {
     seekLead = learnSeekLead(seekLead, drift)
     judgeSeek = false
   }
-  const c = decide(drift, prefs.value, correcting)
+  let c = decide(drift, prefs.value, correcting)
+  strikes = c.kind === 'none' || correcting ? 0 : strikes + 1
+  if (!correcting && c.kind !== 'none' && strikes < 2) c = { kind: 'none' }
+  // In the background timers are throttled, so a speed change could run for minutes: only jump there.
+  if (document.hidden && c.kind === 'rate') c = { kind: 'none' }
   correcting = c.kind === 'rate'
   if (c.kind === 'seek') {
     catchingUp.value = true
+    setRate(1)
     seekTo(expected() + seekLead)
     judgeSeek = true
+    strikes = 0
   } else {
     catchingUp.value = false
-    audio.playbackRate = c.kind === 'rate' ? c.rate : 1
+    setRate(c.kind === 'rate' ? c.rate : 1)
   }
 }
 let loop = setInterval(check, prefs.value.checkMs)
@@ -320,7 +335,10 @@ audio.addEventListener('ended', () => {
 
 // Tab sleeping / device wake: timers were throttled and the clock may have jumped — resync.
 document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState === 'visible') {
+  if (document.hidden) { // don't leave a speed change running while timers sleep
+    correcting = false
+    setRate(1)
+  } else {
     ctx?.resume().catch(() => {})
     if (socket.connected) {
       await clock.sync(3)
@@ -385,7 +403,7 @@ if ('mediaSession' in navigator) {
 
 // Dev-only handle for inspecting sync from the console / tests.
 if (import.meta.env.DEV) {
-  Object.assign(window, { __jam: { audio, clock, expected, driftMs, readiness, heldHere, getAnalyser, get seekLead() { return seekLead } } })
+  Object.assign(window, { __jam: { audio, clock, expected, driftMs, readiness, heldHere, getAnalyser, get seekLead() { return seekLead }, get correcting() { return correcting } } })
 }
 
 // Owns long-lived side effects (sockets, timers, <audio>); a full reload is safer than hot-swapping.

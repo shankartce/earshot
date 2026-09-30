@@ -9,7 +9,7 @@ Everyone plays their **own** copy of each song, and your music is never uploaded
 
 [![MIT License](https://img.shields.io/badge/license-MIT-ff7a59.svg)](LICENSE)
 ![Node 22.18+](https://img.shields.io/badge/node-%E2%89%A522.18-ffb454.svg)
-![Tests](https://img.shields.io/badge/tests-88%20passing-7ccf6a.svg)
+![Tests](https://img.shields.io/badge/tests-89%20passing-7ccf6a.svg)
 ![Built with Preact + Socket.IO](https://img.shields.io/badge/built%20with-Preact%20%2B%20Socket.IO-b388ff.svg)
 
 ### **▶ [Try it live: earshot-30yv.onrender.com](https://earshot-30yv.onrender.com)**
@@ -208,7 +208,7 @@ npm start          # serves the app + realtime server on $PORT (default 3000)
 
 ```bash
 npm run dev         # app + realtime server in one process (http://localhost:5173)
-npm test            # 88 unit + multi-client integration tests (Vitest)
+npm test            # 89 unit + multi-client integration tests (Vitest)
 npm run typecheck   # TypeScript
 npm run build       # production client → dist/
 npm start           # production server (serves dist/)
@@ -219,10 +219,11 @@ npm start           # production server (serves dist/)
 ### How the sync works
 - **The server owns the timeline.** Playback is `{ itemId, isPlaying, position, serverTimestamp, version }`. Where the song is at any moment follows from that, using the server's clock only ([`shared/playback.ts`](shared/playback.ts)).
 - **Clock sync.** Each client pings the server 5 times, keeps the fastest round trip to estimate its clock offset, and repeats every 30 s and on wake-up ([`src/sync/clock.ts`](src/sync/clock.ts)).
-- **Drift correction** runs about once a second ([`src/sync/drift.ts`](src/sync/drift.ts)):
-  - under 50 ms: nothing;
-  - 50–250 ms: gently nudge playback speed (at most ±5%, pitch preserved);
-  - over 250 ms: seek, aiming ahead by a seek delay learned per device.
+- **Drift correction** runs about once a second and puts clean sound ahead of precision ([`src/sync/drift.ts`](src/sync/drift.ts)):
+  - under 300 ms: nothing (the music is never touched for it);
+  - 300 ms–2 s, seen twice in a row: play 2% faster or slower (pitch preserved) until within 80 ms, then back to normal. The speed changes only twice per correction, never in the background;
+  - over 2 s: seek, aiming ahead by a seek delay learned per device;
+  - songs start exactly in step: the seek happens before the sound does.
 - **No race conditions.** Every command carries the version it was based on. If two people press at once, the first wins and the second is told it was too late. The server also moves on by itself if nobody reports that a song ended.
 
 ### Project layout

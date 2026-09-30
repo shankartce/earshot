@@ -52,11 +52,11 @@ export function Settings() {
         <Num label="Speaker delay" unit="ms" min={0} max={400} step={10} value={d.outputLatencyMs}
           hint="Plays this much earlier to make up for Bluetooth or wireless speaker lag."
           onChange={v => setPrefs({ outputLatencyMs: v })} />
-        <Num label="Ignore drift below" unit="ms" min={10} max={200} step={10} value={Math.round(d.ignore * 1000)}
-          hint="Smaller differences than this are left alone." onChange={v => setPrefs({ ignore: Math.min(v / 1000, d.soft - 0.02) })} />
-        <Num label="Jump when drift exceeds" unit="ms" min={100} max={1000} step={25} value={Math.round(d.soft * 1000)}
-          hint="Between the two, playback speed is nudged gently instead of jumping."
-          onChange={v => setPrefs({ soft: Math.max(v / 1000, d.ignore + 0.02) })} />
+        <Num label="Ignore drift below" unit="ms" min={100} max={1000} step={50} value={Math.round(d.ignore * 1000)}
+          hint="Smaller differences are left alone, so the music is never touched for them." onChange={v => setPrefs({ ignore: Math.min(v / 1000, d.soft - 0.1) })} />
+        <Num label="Jump when drift exceeds" unit="ms" min={1000} max={5000} step={250} value={Math.round(d.soft * 1000)}
+          hint="Between the two, playback runs 2% faster or slower until it's back in step (hard to hear)."
+          onChange={v => setPrefs({ soft: Math.max(v / 1000, d.ignore + 0.1) })} />
         <button class="btn ghost" onClick={() => setPrefs({ ...DEFAULT_DRIFT, outputLatencyMs: 0 })}>Reset to defaults</button>
 
         <hr class="sep" />

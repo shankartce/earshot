@@ -4,7 +4,7 @@ import {
   cleanText, parseCode, parseLicense, parsePlaybackCommand, parseProfile, parseQueueCommand, parseReaction, parseSignal, parseTrack,
 } from '../shared/validate.ts'
 import { Clock, estimate, shouldAccept } from '../src/sync/clock.ts'
-import { DEFAULT_DRIFT, decide, learnSeekLead } from '../src/sync/drift.ts'
+import { DEFAULT_DRIFT, decide, learnSeekLead, migratePrefs } from '../src/sync/drift.ts'
 import { groupMessages, typingText } from '../src/utils/chat.ts'
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts'
 import { afterFailure, assembleVerified, chunkRanges, parseHeader, planFetch, sha256Id } from '../src/share/transfer.ts'
@@ -114,22 +114,30 @@ describe('clock offset acceptance', () => {
 })
 
 describe('drift correction', () => {
-  it('ignores tiny drift, nudges rate for small drift, seeks for large drift', () => {
-    expect(decide(0.03)).toEqual({ kind: 'none' })
-    expect(decide(-0.049)).toEqual({ kind: 'none' })
-    const ahead = decide(0.1)
-    const behind = decide(-0.1)
-    expect(ahead.kind === 'rate' && ahead.rate).toBeCloseTo(0.95)
-    expect(behind.kind === 'rate' && behind.rate).toBeCloseTo(1.05)
-    expect(decide(0.25)).toMatchObject({ kind: 'rate' })
-    expect(decide(0.26)).toEqual({ kind: 'seek' })
+  it('leaves up to 300 ms alone, changes speed by a fixed 2% up to 2 s, jumps only beyond', () => {
+    expect(decide(0.2)).toEqual({ kind: 'none' })
+    expect(decide(-0.29)).toEqual({ kind: 'none' })
+    expect(decide(0.4)).toEqual({ kind: 'rate', rate: 0.98 })
+    expect(decide(1.9)).toEqual({ kind: 'rate', rate: 0.98 }) // fixed, not proportional: no per-second rate changes
+    expect(decide(-0.4)).toEqual({ kind: 'rate', rate: 1.02 })
+    expect(decide(2)).toMatchObject({ kind: 'rate' })
+    expect(decide(2.1)).toEqual({ kind: 'seek' })
     expect(decide(-3)).toEqual({ kind: 'seek' })
   })
 
-  it('hysteresis: keeps correcting until well inside the threshold', () => {
-    expect(decide(0.04)).toEqual({ kind: 'none' })
-    expect(decide(0.04, DEFAULT_DRIFT, true)).toMatchObject({ kind: 'rate' })
-    expect(decide(0.02, DEFAULT_DRIFT, true)).toEqual({ kind: 'none' })
+  it('hysteresis: once correcting, keeps going until inside 80 ms', () => {
+    expect(decide(0.2, DEFAULT_DRIFT, true)).toMatchObject({ kind: 'rate' })
+    expect(decide(0.09, DEFAULT_DRIFT, true)).toMatchObject({ kind: 'rate' })
+    expect(decide(0.07, DEFAULT_DRIFT, true)).toEqual({ kind: 'none' })
+  })
+
+  it('old saved prefs lose their jumpy thresholds but keep volume and speaker delay', () => {
+    const old = { ignore: 0.05, soft: 0.25, gain: 0.5, volume: 0.4, outputLatencyMs: 120 }
+    const m = migratePrefs(old)
+    expect(m).toMatchObject({ v: 2, volume: 0.4, outputLatencyMs: 120 })
+    expect(m).not.toHaveProperty('ignore')
+    expect(m).not.toHaveProperty('soft')
+    expect(migratePrefs({ v: 2, ignore: 0.5 })).toEqual({ v: 2, ignore: 0.5 }) // chosen after the change: kept
   })
 
   it('learns seek latency: a seek that lands 60ms behind aims further ahead next time', () => {
@@ -141,10 +149,9 @@ describe('drift correction', () => {
     expect(learnSeekLead(0.14, -1)).toBe(0.15) // capped: currentTime's own reporting lag must not be chased forever
   })
 
-  it('rate deviation is capped and thresholds are configurable', () => {
-    const r = decide(0.2, { ...DEFAULT_DRIFT, gain: 10 })
-    expect(r.kind === 'rate' && r.rate).toBeCloseTo(0.95)
-    expect(decide(0.2, { ...DEFAULT_DRIFT, soft: 0.1 })).toEqual({ kind: 'seek' })
+  it('thresholds are configurable', () => {
+    expect(decide(0.5, { ...DEFAULT_DRIFT, maxRate: 0.01 })).toEqual({ kind: 'rate', rate: 0.99 })
+    expect(decide(0.5, { ...DEFAULT_DRIFT, soft: 0.4 })).toEqual({ kind: 'seek' })
   })
 })
 

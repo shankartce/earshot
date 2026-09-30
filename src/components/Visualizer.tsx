@@ -54,18 +54,22 @@ export function Visualizer({ placement }: { placement: 'ring' | 'strip' }) {
       if (style === 'bars') drawBars(g, w, h, f)
       else if (style === 'wave') drawWave(g, w, h, f)
       else if (style === 'radial') drawRing(g, w, h, f, Math.min(w, h) * 0.36)
-      host.style.setProperty('--energy', energy(f.freq).toFixed(3))
+      if (style === 'glow') host.style.setProperty('--energy', energy(f.freq).toFixed(2)) // only Glow's CSS reads it
     }
 
     ro.observe(canvas)
     fit()
-    if (!still) {
-      const loop = (t: number) => { frame(t); raf = requestAnimationFrame(loop) }
-      raf = requestAnimationFrame(loop)
-    }
+    // Draw only while on screen: a scrolled-away visualizer still repainting every frame makes phones stutter.
+    const loop = (t: number) => { frame(t); raf = requestAnimationFrame(loop) }
+    const io = new IntersectionObserver(([e]) => {
+      cancelAnimationFrame(raf)
+      if (e.isIntersecting && !still) raf = requestAnimationFrame(loop)
+    })
+    io.observe(canvas)
     return () => {
       cancelAnimationFrame(raf)
       ro.disconnect()
+      io.disconnect()
       host.style.removeProperty('--energy')
     }
   }, [active, style])
