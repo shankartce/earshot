@@ -3,7 +3,7 @@
 // the device. Sync access handles only exist in workers, and they're the one OPFS write API every
 // target browser supports.
 
-export type WorkerReq = { kind: 'audio'; file: File } | { kind: 'art'; hex: string; blob: Blob }
+export type WorkerReq = { kind: 'audio'; file: File } | { kind: 'store'; dir: 'art' | 'lyrics'; name: string; blob: Blob }
 export type WorkerRes = { ok: true; id: string; stored: boolean } | { ok: false }
 
 async function store(dirName: string, name: string, buf: ArrayBuffer): Promise<boolean> {
@@ -11,7 +11,8 @@ async function store(dirName: string, name: string, buf: ArrayBuffer): Promise<b
     const root = await navigator.storage.getDirectory()
     const dir = await root.getDirectoryHandle(dirName, { create: true })
     const fh = await dir.getFileHandle(name, { create: true })
-    if ((await fh.getFile()).size === buf.byteLength) return true // same content already stored
+    // Audio is content-addressed (named by its hash), so same name + size = same bytes already stored.
+    if (dirName === 'audio' && (await fh.getFile()).size === buf.byteLength) return true
     const h = await (fh as any).createSyncAccessHandle()
     try {
       h.truncate(0)
@@ -29,9 +30,9 @@ async function store(dirName: string, name: string, buf: ArrayBuffer): Promise<b
 self.onmessage = async (e: MessageEvent<WorkerReq>) => {
   const msg = e.data
   try {
-    if (msg.kind === 'art') {
-      const stored = await store('art', msg.hex, await msg.blob.arrayBuffer())
-      return self.postMessage({ ok: true, id: msg.hex, stored } satisfies WorkerRes)
+    if (msg.kind === 'store') {
+      const stored = await store(msg.dir, msg.name, await msg.blob.arrayBuffer())
+      return self.postMessage({ ok: true, id: msg.name, stored } satisfies WorkerRes)
     }
     const buf = await msg.file.arrayBuffer()
     const digest = await crypto.subtle.digest('SHA-256', buf)

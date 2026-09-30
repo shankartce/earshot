@@ -47,6 +47,15 @@ export function Settings() {
           hint="Between the two, playback speed is nudged gently instead of jumping."
           onChange={v => setPrefs({ soft: Math.max(v / 1000, d.ignore + 0.02) })} />
         <button class="btn ghost" onClick={() => setPrefs({ ...DEFAULT_DRIFT, outputLatencyMs: 0 })}>Reset to defaults</button>
+
+        <hr class="sep" />
+        <h2 class="section-h">Keyboard shortcuts in a room</h2>
+        <dl class="shortcuts">
+          <dt><kbd>Space</kbd> or <kbd>K</kbd></dt><dd>Play / pause</dd>
+          <dt><kbd>J</kbd> / <kbd>L</kbd></dt><dd>Back / forward 10 seconds</dd>
+          <dt><kbd>N</kbd> / <kbd>P</kbd></dt><dd>Next / previous song</dd>
+          <dt><kbd>Alt</kbd> + <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Move the focused song in the queue</dd>
+        </dl>
       </div>
     </main>
   )

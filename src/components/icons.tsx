@@ -33,6 +33,9 @@ const paths = {
   search: <><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.2-4.2" /></>,
   send: <><path d="M20.5 3.5 3.5 10.8l6.8 2.9 2.9 6.8Z" /><path d="m10.3 13.7 4.2-4.2" /></>,
   chat: <path d="M4.5 6A1.5 1.5 0 0 1 6 4.5h12A1.5 1.5 0 0 1 19.5 6v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5v-3.5H6A1.5 1.5 0 0 1 4.5 15Z" />,
+  wave: <><path d="M3 12h2" /><path d="M7 8v8" /><path d="M11 5v14" /><path d="M15 9v6" /><path d="M19 7v10" /><path d="M21 12h0" /></>,
+  lyrics: <><path d="M5 6.5h14" /><path d="M5 11h10" /><path d="M5 15.5h7" /><circle cx="17" cy="17" r="2" /><path d="M19 17V10.5l2-.5" /></>,
+  home: <><path d="M4 11 12 4.5 20 11" /><path d="M6.5 9.5V19h11V9.5" /></>,
   arrowLeft: <><path d="M19 12H5" /><path d="m11 6-6 6 6 6" /></>,
 } satisfies Record<string, JSX.Element>
 

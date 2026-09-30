@@ -15,6 +15,7 @@ export interface LocalTrack extends Track {
   size: number
   addedAt: number
   hasArt: boolean
+  hasLyrics?: boolean
 }
 
 export interface Playlist { id: string; name: string; trackIds: string[]; createdAt: number }
@@ -39,7 +40,7 @@ const KEY = 'jam:library'
 const memory = new Map<string, Blob>() // files we couldn't store on disk (this visit only)
 const hexOf = (id: string) => id.replace(/^sha256:/, '')
 
-async function dir(name: 'audio' | 'art') {
+async function dir(name: 'audio' | 'art' | 'lyrics') {
   const root = await navigator.storage.getDirectory()
   return root.getDirectoryHandle(name, { create: true })
 }
@@ -108,13 +109,17 @@ function probeDuration(blob: Blob): Promise<number> {
 
 const AUDIO_EXT = /\.(mp3|m4a|m4b|aac|flac|ogg|oga|opus|wav|webm|aiff?|alac)$/i
 export const isAudioFile = (f: File) => f.type.startsWith('audio/') || AUDIO_EXT.test(f.name)
+const isLrc = (f: File) => /\.lrc$/i.test(f.name)
+const baseName = (name: string) => name.replace(/\.[^.]+$/, '').toLowerCase()
 
 /** tracks = every readable file from this import, in order (new ones and ones already in the library). */
 export interface ImportResult { tracks: LocalTrack[]; added: number; duplicates: number; failed: string[] }
 
 export async function importFiles(files: File[]): Promise<ImportResult> {
   const audio = files.filter(isAudioFile)
-  const result: ImportResult = { tracks: [], added: 0, duplicates: 0, failed: files.filter(f => !isAudioFile(f) && !f.name.startsWith('.')).map(f => f.name) }
+  const result: ImportResult = { tracks: [], added: 0, duplicates: 0, failed: files.filter(f => !isAudioFile(f) && !isLrc(f) && !f.name.startsWith('.')).map(f => f.name) }
+  // "Song.lrc" next to "Song.mp3" (same folder drop / multi-select) becomes that song's lyrics.
+  const lrcByName = new Map(files.filter(isLrc).map(f => [baseName(f.name), f]))
   if (!audio.length) return result
   navigator.storage?.persist?.().catch(() => {})
   importing.value = { done: 0, total: audio.length }
@@ -137,7 +142,7 @@ export async function importFiles(files: File[]): Promise<ImportResult> {
           if (thumb) {
             hasArt = true
             urls.set(h.id, URL.createObjectURL(thumb))
-            await ask({ kind: 'art', hex: hexOf(h.id), blob: thumb })
+            await ask({ kind: 'store', dir: 'art', name: hexOf(h.id), blob: thumb })
           }
         }
         const t: LocalTrack = {
@@ -145,6 +150,8 @@ export async function importFiles(files: File[]): Promise<ImportResult> {
           trackNo: tags.trackNo, duration: playable || tags.duration, fileName: file.name, size: file.size,
           addedAt: Date.now(), hasArt,
         }
+        const lrc = lrcByName.get(baseName(file.name))
+        if (lrc) t.hasLyrics = await saveLyrics(t.id, lrc)
         // Publish each track as soon as it's ready so big imports feel alive.
         localTracks.value = new Map(localTracks.value).set(t.id, t)
         result.tracks.push(t)
@@ -225,7 +232,7 @@ export async function removeTrack(id: string) {
   }
   memory.delete(id)
   save()
-  for (const d of ['audio', 'art'] as const) {
+  for (const d of ['audio', 'art', 'lyrics'] as const) {
     try { await (await dir(d)).removeEntry(hexOf(id)) } catch { /* already gone */ }
   }
 }
@@ -256,6 +263,35 @@ export async function storageUsage(): Promise<{ used: number; quota: number } | 
   try {
     const e = await navigator.storage.estimate()
     return { used: e.usage ?? 0, quota: e.quota ?? 0 }
+  } catch {
+    return null
+  }
+}
+
+// ---- lyrics files (.lrc), stored next to the audio ----
+
+const lyricsMemory = new Map<string, string>()
+
+async function saveLyrics(localId: string, file: Blob): Promise<boolean> {
+  const r = await ask({ kind: 'store', dir: 'lyrics', name: hexOf(localId), blob: file })
+  if (!r.ok || !r.stored) lyricsMemory.set(localId, await file.text())
+  return true
+}
+
+/** Attach an .lrc file to a song in your library. */
+export async function setLyrics(localId: string, file: File) {
+  await saveLyrics(localId, file)
+  const t = localTracks.value.get(localId)
+  if (t) {
+    localTracks.value = new Map(localTracks.value).set(localId, { ...t, hasLyrics: true })
+    save()
+  }
+}
+
+export async function readLyricsText(localId: string): Promise<string | null> {
+  if (lyricsMemory.has(localId)) return lyricsMemory.get(localId)!
+  try {
+    return await (await (await (await dir('lyrics')).getFileHandle(hexOf(localId))).getFile()).text()
   } catch {
     return null
   }

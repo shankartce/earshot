@@ -1,6 +1,10 @@
 // The stage: artwork, song info, progress, transport controls, and the local-readiness state.
-import { useState } from 'preact/hooks'
-import { isIOS, prefs, readiness, roomPosition, setPrefs, tuneIn, unlockAudio } from '../audio/player.ts'
+import { useEffect, useState } from 'preact/hooks'
+import { isIOS, prefs, readiness, roomPosition, setPrefs, syncStatus, tuneIn, unlockAudio } from '../audio/player.ts'
+import { vizStyle } from '../audio/visualizer.ts'
+import { stageView } from '../state/ui.ts'
+import { Lyrics } from './Lyrics.tsx'
+import { StageTools, Visualizer } from './Visualizer.tsx'
 import { artUrls, confirmMatch, importFiles, rejectMatch, resolveLocal } from '../library/library.ts'
 import { reportImport } from '../state/actions.ts'
 import { canControl, currentItem, participantById, playback, room, toast } from '../state/room.ts'
@@ -19,20 +23,31 @@ export function NowPlaying() {
   const addedBy = item && participantById(item.addedBy)
   const local = t ? resolveLocal(t) : null
   const art = local?.status === 'ready' ? artUrls.value.get(local.local.id) : null
+  const showLyrics = stageView.value === 'lyrics' && !!t
 
   return (
-    <section class={`stage${pb.isPlaying ? ' is-playing' : ''}`} aria-label="Now playing">
-      <div class="art-wrap">
-        <div class="vinyl" aria-hidden="true" />
-        <FloatingReactions />
-        <Cover id={t?.id} art={art} class="art" key={t?.id} />
-      </div>
+    <section class={`stage${pb.isPlaying ? ' is-playing' : ''} viz-${vizStyle.value}${showLyrics ? ' with-lyrics' : ''}`} aria-label="Now playing">
+      {showLyrics ? (
+        <div class="lyrics-wrap">
+          <FloatingReactions />
+          <Lyrics track={t} />
+        </div>
+      ) : (
+        <div class="art-wrap">
+          <Visualizer placement="ring" />
+          <div class="vinyl" aria-hidden="true" />
+          <FloatingReactions />
+          <Cover id={t?.id} art={art} class="art" key={t?.id} />
+        </div>
+      )}
+      {!showLyrics && <Visualizer placement="strip" />}
+      <StageTools hasTrack={!!t} />
 
       <div class="np-meta">
         <p class="eyebrow np-state">
           {item ? pb.isPlaying ? <><Equalizer /> Playing together</> : 'Paused' : 'Nothing playing yet'}
         </p>
-        <h1 class="np-title" key={t?.id}>{t?.title ?? 'Pick something to play'}</h1>
+        <h2 class="np-title" key={t?.id}>{t?.title ?? 'Pick something to play'}</h2>
         <p class="np-artist">
           {t ? [t.artist || 'Unknown artist', t.album].filter(Boolean).join(' · ') : 'Add songs from your device to the queue.'}
         </p>
@@ -41,6 +56,7 @@ export function NowPlaying() {
 
       <Readiness />
       {item && <Progress />}
+      {syncStatus.value === 'catching-up' && readiness.value === 'ready' && <CatchingUp />}
       <Controls />
       <ReactionBar />
       {!isIOS && <Volume />}
@@ -140,7 +156,7 @@ function Controls() {
     <div class="controls" role="group" aria-label="Playback controls">
       <button class="icon-btn" onClick={() => seekBy(-10)} disabled={off} title={title} aria-label="Seek back 10 seconds"><Icon name="back10" size={22} /></button>
       <button class="icon-btn lg" onClick={() => playback({ type: 'PREVIOUS' })} disabled={off} title={title} aria-label="Previous track"><Icon name="prev" size={26} /></button>
-      <button class="play-btn" disabled={off} title={title} aria-label={playing ? 'Pause' : 'Play'}
+      <button class="play-btn" disabled={off} title={title} aria-label={playing ? 'Pause' : 'Play'} aria-keyshortcuts="Space K"
         onClick={() => {
           if (readiness.value === 'needs-tap') tuneIn()
           else unlockAudio()
@@ -164,4 +180,14 @@ function Volume() {
         aria-valuetext={`${Math.round(v * 100)}%`} onInput={e => setPrefs({ volume: Number(e.currentTarget.value) })} />
     </label>
   )
+}
+
+/** Only mention catching up if it lasts; brief corrections should stay invisible. */
+function CatchingUp() {
+  const [show, setShow] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setShow(true), 3000)
+    return () => clearTimeout(t)
+  }, [])
+  return show ? <p class="catching-up" role="status">Trying to catch up with the room…</p> : null
 }

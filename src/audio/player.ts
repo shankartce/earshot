@@ -77,7 +77,34 @@ export function unlockAudio() {
 
 /** "Tap to tune in": the browser blocked autoplay, so play from inside this tap. */
 export function tuneIn() {
+  ctx?.resume().catch(() => {})
   audio.play().then(() => apply()).catch(() => {})
+}
+
+// ---- optional Web Audio graph (for the visualizer; analysis stays in this browser) ----
+// Once the element is routed through an AudioContext, a suspended context means silence, so the
+// graph is only built from a user gesture, and the sync loop watches its state.
+let ctx: AudioContext | null = null
+let analyser: AnalyserNode | null = null
+let ctxStalled = 0
+
+export const getAnalyser = () => (ctx?.state === 'running' ? analyser : null)
+
+/** Call from a user gesture. Safe to call repeatedly. */
+export function enableAnalyser() {
+  try {
+    if (!ctx) {
+      ctx = new AudioContext()
+      analyser = ctx.createAnalyser()
+      analyser.fftSize = 1024
+      analyser.smoothingTimeConstant = 0.78
+      ctx.createMediaElementSource(audio).connect(analyser)
+      analyser.connect(ctx.destination)
+    }
+    if (ctx.state !== 'running') ctx.resume().catch(() => {})
+  } catch {
+    /* no Web Audio: the visualizer just idles */
+  }
 }
 
 function expected() {
@@ -190,6 +217,13 @@ function check() {
     return
   }
   if (audio.paused && !audio.ended) return void apply() // interrupted (call, headphones…); resume
+  if (ctx && ctx.state !== 'running') {
+    // e.g. iOS interrupted the audio session: try to resume; if it stays stuck, ask for a tap
+    ctx.resume().catch(() => {})
+    if (++ctxStalled >= 3) readiness.value = 'needs-tap'
+    return
+  }
+  ctxStalled = 0
   if (audio.seeking || performance.now() - lastSeekAt < prefs.value.seekCooldownMs) return
   const drift = audio.currentTime - expected()
   driftMs.value = Math.round(drift * 1000)
@@ -219,6 +253,7 @@ audio.addEventListener('ended', () => {
 
 // Tab sleeping / device wake: timers were throttled and the clock may have jumped — resync.
 document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible') ctx?.resume().catch(() => {})
   if (document.visibilityState === 'visible' && socket.connected) {
     await clock.sync(3)
     apply()

@@ -4,21 +4,22 @@ import { useLocation, useRoute } from 'preact-iso'
 import type { RoomPeek } from '../../shared/events.ts'
 import type { Profile } from '../../shared/types.ts'
 import { parseCode } from '../../shared/validate.ts'
-import { driftMs, readiness, unlockAudio } from '../audio/player.ts'
+import { driftMs, readiness, roomPosition, tuneIn, unlockAudio } from '../audio/player.ts'
 import { Icon } from '../components/icons.tsx'
 import { NowPlaying } from '../components/NowPlaying.tsx'
 import { Participants } from '../components/Participants.tsx'
 import { ProfileFields } from '../components/ProfileForm.tsx'
 import { Chat } from '../components/Chat.tsx'
+import { MOBILE } from '../components/Dock.tsx'
+import { mobileTab } from '../state/ui.ts'
 import { Queue } from '../components/Queue.tsx'
-import { Announcer } from '../components/Reactions.tsx'
 import { unread } from '../state/social.ts'
-import { useMedia } from '../utils/media.ts'
+import { tabKeys, useMedia } from '../utils/media.ts'
 import { copyText, inviteLink, SettingsSheet, ShareSheet } from '../components/RoomSheets.tsx'
 import { Avatar, ConnectionPill, Empty } from '../components/ui.tsx'
 import { clock } from '../realtime/socket.ts'
 import { profile, randomAvatar, saveProfile, tokenFor } from '../state/profile.ts'
-import { connection, currentItem, joinRoom, leaveRoom, peekRoom, room } from '../state/room.ts'
+import { canControl, connection, currentItem, joinRoom, leaveRoom, peekRoom, playback, room } from '../state/room.ts'
 import { hues } from '../utils/format.ts'
 
 export function RoomPage() {
@@ -111,6 +112,8 @@ function RoomView() {
   const debug = new URLSearchParams(location.search).has('debug')
   const online = r.participants.filter(p => p.isOnline)
   const wide = useMedia('(min-width: 1360px)')
+  const mobile = useMedia(MOBILE)
+  useShortcuts()
 
   return (
     <div class={`room${r.playback.isPlaying ? ' playing' : ''}`} style={{ '--h1': h1, '--h2': h2 }}>
@@ -136,18 +139,27 @@ function RoomView() {
         </div>
       </header>
 
-      <main class={`room-grid${wide ? ' three' : ''}`}>
-        <NowPlaying />
-        <aside class="room-side">
-          <Participants onInvite={() => setShare(true)} />
-          {wide ? <Queue /> : <QueueChatTabs />}
-        </aside>
-        {wide && <aside class="room-chat"><Chat /></aside>}
-      </main>
+      {connection.value !== 'online' && <p class="conn-banner" role="status">Connection lost — reconnecting…</p>}
+
+      {mobile ? (
+        <main class={`room-mobile tab-${mobileTab.value}`}>
+          {mobileTab.value === 'room' && <><NowPlaying /><Participants onInvite={() => setShare(true)} /></>}
+          {mobileTab.value === 'queue' && <Queue />}
+          {mobileTab.value === 'chat' && <Chat />}
+        </main>
+      ) : (
+        <main class={`room-grid${wide ? ' three' : ''}`}>
+          <NowPlaying />
+          <aside class="room-side">
+            <Participants onInvite={() => setShare(true)} />
+            {wide ? <Queue /> : <QueueChatTabs />}
+          </aside>
+          {wide && <aside class="room-chat"><Chat /></aside>}
+        </main>
+      )}
 
       <ShareSheet open={share} onClose={() => setShare(false)} />
       <SettingsSheet open={settings} onClose={() => setSettings(false)} />
-      <Announcer />
       {debug && (
         <pre class="debug" aria-hidden="true">
           {`offset ${clock.offset.toFixed(1)}ms  rtt ${clock.rtt.toFixed(1)}ms\n`}
@@ -164,7 +176,7 @@ function QueueChatTabs() {
   const [tab, setTab] = useState<'queue' | 'chat'>('queue')
   return (
     <div class="side-tabs">
-      <div class="segmented tabs" role="tablist" aria-label="Queue and chat">
+      <div class="segmented tabs" role="tablist" aria-label="Queue and chat" onKeyDown={tabKeys}>
         <button role="tab" aria-selected={tab === 'queue'} class={tab === 'queue' ? 'on' : ''} onClick={() => setTab('queue')}>
           <Icon name="list" size={16} /> Queue
         </button>
@@ -176,4 +188,32 @@ function QueueChatTabs() {
       {tab === 'queue' ? <Queue /> : <Chat />}
     </div>
   )
+}
+
+/**
+ * Keyboard shortcuts while in a room (ignored while typing or when a control has focus):
+ * Space/K play-pause · J/L back/forward 10s · N next · P previous
+ */
+function useShortcuts() {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || !canControl.value) return
+      if ((e.target as HTMLElement).closest('input, textarea, select, button, a, [contenteditable], dialog')) return
+      const playing = room.value?.playback.isPlaying
+      const act: Record<string, () => void> = {
+        ' ': () => { if (readiness.value === 'needs-tap') tuneIn(); playback({ type: playing ? 'PAUSE' : 'PLAY' }) },
+        k: () => act[' '](),
+        j: () => playback({ type: 'SEEK', position: Math.max(0, roomPosition.value - 10) }),
+        l: () => playback({ type: 'SEEK', position: roomPosition.value + 10 }),
+        n: () => playback({ type: 'NEXT' }),
+        p: () => playback({ type: 'PREVIOUS' }),
+      }
+      const fn = act[e.key.toLowerCase()]
+      if (!fn) return
+      e.preventDefault()
+      fn()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
 }

@@ -1,5 +1,6 @@
 // "+ Add music": from new files, your library (recently added first), or a playlist.
 // Only metadata is published to the room; the audio stays here.
+import { tabKeys } from '../utils/media.ts'
 import { useState } from 'preact/hooks'
 import { artUrls, playlists, sortedTracks, type LocalTrack } from '../library/library.ts'
 import { normalize } from '../library/match.ts'
@@ -29,7 +30,7 @@ export function AddMusicSheet({ open, onClose }: { open: boolean; onClose: () =>
 
   return (
     <Sheet open={open} onClose={onClose} title="Add music">
-      <div class="segmented tabs" role="tablist" aria-label="Add from">
+      <div class="segmented tabs" role="tablist" aria-label="Add from" onKeyDown={tabKeys}>
         {([['library', 'Library'], ['files', 'Files'], ['playlists', 'Playlists']] as const).map(([k, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} class={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>
         ))}

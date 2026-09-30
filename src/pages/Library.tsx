@@ -1,5 +1,6 @@
 // /library — your local music: import (files, folders, drag & drop), search, sort, playlists, remove.
 import { useEffect, useState } from 'preact/hooks'
+import { tabKeys } from '../utils/media.ts'
 import { matchesSearch } from '../components/AddMusic.tsx'
 import { Icon } from '../components/icons.tsx'
 import { ConfirmButton, Cover, DropZone, Empty, FileButton } from '../components/ui.tsx'
@@ -66,7 +67,7 @@ export function Library() {
           </p>
         )}
 
-        <div class="segmented tabs" role="tablist" aria-label="Library sections">
+        <div class="segmented tabs" role="tablist" aria-label="Library sections" onKeyDown={tabKeys}>
           <button role="tab" aria-selected={tab === 'songs'} class={tab === 'songs' ? 'on' : ''} onClick={() => setTab('songs')}>Songs</button>
           <button role="tab" aria-selected={tab === 'playlists'} class={tab === 'playlists' ? 'on' : ''} onClick={() => setTab('playlists')}>
             Playlists {playlists.value.length > 0 && <span class="count">{playlists.value.length}</span>}
@@ -96,7 +97,7 @@ function Songs() {
       <div class="lib-tools">
         <label class="search grow">
           <Icon name="search" size={18} />
-          <input class="input" type="search" placeholder="Search title, artist, album" value={q}
+          <input class="input" type="search" placeholder="Search songs" value={q}
             onInput={e => setQ(e.currentTarget.value)} aria-label="Search your library" />
         </label>
         <label class="sort">

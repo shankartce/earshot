@@ -1,7 +1,7 @@
 // Chat, typing, unread counts and floating reactions — the "room feels alive" layer.
 import { computed, effect, signal } from '@preact/signals'
 import { socket } from '../realtime/socket.ts'
-import { me, participantById, room, toast } from './room.ts'
+import { currentItem, me, participantById, room, toast } from './room.ts'
 
 // ---- chat ----
 
@@ -74,8 +74,8 @@ export const sendReaction = (emoji: string) => socket.emit('reaction:send', emoj
 // Screen readers: one polite announcement at a time, throttled so a burst isn't a flood.
 export const announcement = signal('')
 let lastAnnounce = 0
-function announce(text: string) {
-  if (Date.now() - lastAnnounce < 2000) return
+export function announce(text: string, important = false) {
+  if (!important && Date.now() - lastAnnounce < 2000) return
   lastAnnounce = Date.now()
   announcement.value = text
 }
@@ -119,6 +119,16 @@ socket.on('reaction', ({ participantId, emoji }) => {
   lastReaction.value = { id, text }
   setTimeout(() => { if (lastReaction.value?.id === id) lastReaction.value = null }, 3000)
   if (participantId !== me.value) announce(text)
+})
+
+// Tell screen-reader users when the song changes (the stage heading updates silently otherwise).
+let lastItem: string | null | undefined
+effect(() => {
+  const item = currentItem.value
+  if (lastItem !== undefined && item && item.id !== lastItem) {
+    announce(`Now playing: ${item.track.title}${item.track.artist ? ` by ${item.track.artist}` : ''}`, true)
+  }
+  lastItem = item?.id ?? null
 })
 
 import.meta.hot?.dispose(() => location.reload())

@@ -6,6 +6,7 @@ import {
 import { Clock, estimate } from '../src/sync/clock.ts'
 import { DEFAULT_DRIFT, decide, learnSeekLead } from '../src/sync/drift.ts'
 import { groupMessages, typingText } from '../src/utils/chat.ts'
+import { lineAt, parseLrc } from '../src/lyrics/lrc.ts'
 
 const HASH = 'sha256:' + 'a'.repeat(64)
 
@@ -120,6 +121,27 @@ describe('drift correction', () => {
     const r = decide(0.2, { ...DEFAULT_DRIFT, gain: 10 })
     expect(r.kind === 'rate' && r.rate).toBeCloseTo(0.95)
     expect(decide(0.2, { ...DEFAULT_DRIFT, soft: 0.1 })).toEqual({ kind: 'seek' })
+  })
+})
+
+describe('lyrics (.lrc)', () => {
+  it('parses stamps, multi-stamp lines, offsets and ignores tags', () => {
+    const lines = parseLrc([
+      '﻿[ti:Example Song]', '[ar:Example Artist]', '[offset:+500]',
+      '[00:12.42]First line', '[00:20.00][01:05.5]Chorus', '[00:30:25] colon hundredths',
+      '[00:40.00]<00:40.00>word <00:40.50>stamps', 'no stamp here', '[00:50.00]',
+    ].join('\r\n'))
+    expect(lines.map(l => [Number(l.time.toFixed(2)), l.text])).toEqual([
+      [11.92, 'First line'], [19.5, 'Chorus'], [29.75, 'colon hundredths'],
+      [39.5, 'word stamps'], [49.5, ''], [65, 'Chorus'],
+    ])
+    expect(parseLrc('just plain lyrics\nwithout times')).toEqual([])
+  })
+
+  it('finds the current line', () => {
+    const lines = parseLrc('[00:10]a\n[00:20]b\n[00:30]c')
+    expect([0, 10, 19.99, 20, 99].map(t => lineAt(lines, t))).toEqual([-1, 0, 0, 1, 2])
+    expect(lineAt([], 5)).toBe(-1)
   })
 })
 

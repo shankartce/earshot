@@ -99,13 +99,13 @@ export function Empty({ icon, title, children }: { icon: Parameters<typeof Icon>
 }
 
 /** A styled file picker. The real <input> stays focusable (visually hidden) for keyboard users. */
-export function FileButton({ onFiles, children, class: cls = 'btn', multiple = true, label, folder }: {
-  onFiles: (files: File[]) => void; children: ComponentChildren; class?: string; multiple?: boolean; label?: string; folder?: boolean
+export function FileButton({ onFiles, children, class: cls = 'btn', multiple = true, label, folder, accept }: {
+  onFiles: (files: File[]) => void; children: ComponentChildren; class?: string; multiple?: boolean; label?: string; folder?: boolean; accept?: string
 }) {
   return (
     <label class={`${cls} file-btn`}>
       {children}
-      <input type="file" accept="audio/*,.mp3,.m4a,.flac,.ogg,.opus,.wav,.aac" multiple={multiple} class="sr-only" aria-label={label}
+      <input type="file" accept={accept ?? 'audio/*,.mp3,.m4a,.flac,.ogg,.opus,.wav,.aac,.lrc'} multiple={multiple} class="sr-only" aria-label={label}
         {...(folder ? { webkitdirectory: '' } : {})}
         onChange={e => {
           const files = [...(e.currentTarget.files ?? [])]
