@@ -150,7 +150,9 @@ function RoomView() {
   useEffect(() => {
     const el = headRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => document.documentElement.style.setProperty('--head-h', `${el.offsetHeight}px`))
+    const measure = () => document.documentElement.style.setProperty('--head-h', `${el.offsetHeight}px`)
+    measure()
+    const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
@@ -265,7 +267,7 @@ function useShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || !canControl.value) return
-      const target = e.target as HTMLElement
+      const target = e.target instanceof Element ? e.target : document.body
       // Typing somewhere, or a dialog open: shortcuts off. On a focused button or link only Space and
       // Enter belong to it — after clicking Play, J/L/N/P should still work.
       if (target.closest('input, textarea, select, [contenteditable], dialog')) return

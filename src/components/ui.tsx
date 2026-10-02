@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from 'preact/hooks'
 import type { Avatar as AvatarT } from '../../shared/types.ts'
 import { syncStatus } from '../audio/player.ts'
 import { filesFromDrop } from '../library/library.ts'
-import { toasts } from '../state/room.ts'
+import { dismissToast, toasts } from '../state/room.ts'
 import { hues } from '../utils/format.ts'
 import { Icon } from './icons.tsx'
 
@@ -70,6 +70,7 @@ export function Toasts() {
         <div key={t.id} class={`toast ${t.tone ?? ''}`}>
           {t.who ? <Avatar avatar={t.who.avatar} size={24} /> : t.tone === 'error' ? <Icon name="warn" size={18} /> : null}
           <span>{t.text}</span>
+          {t.action && <button class="toast-action" onClick={() => { t.action!.run(); dismissToast(t.id) }}>{t.action.label}</button>}
         </div>
       ))}
     </div>

@@ -23,13 +23,14 @@ export const participantById = (id: string) => room.value?.participants.find(p =
 
 // ---- toasts / activity ----
 
-export interface Toast { id: number; text: string; who?: Pick<Participant, 'displayName' | 'avatar'>; tone?: 'info' | 'error' }
+export interface Toast { id: number; text: string; who?: Pick<Participant, 'displayName' | 'avatar'>; tone?: 'info' | 'error'; action?: { label: string; run: () => void } }
 export const toasts = signal<Toast[]>([])
 let toastId = 0
+export const dismissToast = (id: number) => { toasts.value = toasts.value.filter(x => x.id !== id) }
 export function toast(text: string, opts: Omit<Toast, 'id' | 'text'> = {}) {
   const t = { id: ++toastId, text, ...opts }
   toasts.value = [...toasts.value.slice(-3), t]
-  setTimeout(() => { toasts.value = toasts.value.filter(x => x.id !== t.id) }, opts.tone === 'error' ? 5000 : 3500)
+  setTimeout(() => dismissToast(t.id), opts.tone === 'error' || opts.action ? 5000 : 3500)
 }
 
 // ---- transport helpers ----

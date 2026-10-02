@@ -1,8 +1,8 @@
 // Cross-cutting user actions that touch both the local library and the room.
 import { effect } from '@preact/signals'
 import { applyAutoShare, importFiles, localTracks, lostTracks, toTrack, type ImportResult, type LocalTrack } from '../library/library.ts'
-import type { Track } from '../../shared/types.ts'
-import { queue, room, toast } from './room.ts'
+import type { QueueItem, Track } from '../../shared/types.ts'
+import { me, queue, room, toast } from './room.ts'
 
 // If the browser cleared stored songs, say so once instead of silently showing them as missing.
 let lostSeen = 0
@@ -42,4 +42,34 @@ export async function importAndQueue(files: File[]) {
   reportImport(res)
   await queueTracks(res.tracks)
   return res
+}
+
+/** Remove a song from the queue, with an Undo that puts it back where it was. */
+export async function removeFromQueue(item: QueueItem) {
+  const at = room.value?.queue.items.findIndex(i => i.id === item.id) ?? -1
+  const r = await queue({ type: 'REMOVE', itemId: item.id })
+  if (!r.ok) return
+  toast(`Removed “${item.track.title}”`, {
+    action: {
+      label: 'Undo',
+      run: async () => {
+        if (!(await queue({ type: 'ADD', tracks: [item.track] })).ok) return
+        const back = room.value?.queue.items.findLast(i => i.track.id === item.track.id && i.addedBy === me.value)
+        if (back && at > -1) queue({ type: 'MOVE', itemId: back.id, toIndex: at })
+      },
+    },
+  })
+}
+
+/** Add songs from your library so they play right after the current one (in this order). */
+export async function playNext(tracks: LocalTrack[]) {
+  if (!tracks.length || !room.value) return
+  applyAutoShare(tracks)
+  if (!(await queue({ type: 'ADD', tracks: tracks.map(toTrack) })).ok) return
+  // PLAY_NEXT puts each right after the current song, so go in reverse to keep their order.
+  for (const t of [...tracks].reverse()) {
+    const added = room.value?.queue.items.findLast(i => i.track.id === t.id && i.addedBy === me.value)
+    if (added) await queue({ type: 'PLAY_NEXT', itemId: added.id })
+  }
+  toast(tracks.length === 1 ? `“${tracks[0].title}” plays next` : `${tracks.length} songs play next`)
 }

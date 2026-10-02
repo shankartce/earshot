@@ -9,7 +9,7 @@ Everyone plays their **own** copy of each song, and your music is never uploaded
 
 [![MIT License](https://img.shields.io/badge/license-MIT-ff7a59.svg)](LICENSE)
 ![Node 22.18+](https://img.shields.io/badge/node-%E2%89%A522.18-ffb454.svg)
-![Tests](https://img.shields.io/badge/tests-114%20passing-7ccf6a.svg)
+![Tests](https://img.shields.io/badge/tests-115%20passing-7ccf6a.svg)
 ![Built with Preact + Socket.IO](https://img.shields.io/badge/built%20with-Preact%20%2B%20Socket.IO-b388ff.svg)
 
 ### **▶ [Try it live: earshot-30yv.onrender.com](https://earshot-30yv.onrender.com)**
@@ -39,7 +39,7 @@ Unlike streaming services, Earshot doesn't stream anything. **Each person plays 
 | 👥 **Presence** | See who's here and whether each friend is *Ready* or still needs the song. |
 | 📚 **Your library, saved** | Drop in files or whole folders. Tags and album art are read in your browser and remembered next visit. |
 | 🔍 **Smart matching** | Your file doesn't have to be byte-identical. Earshot spots *"that's the same song"* and asks before using it. |
-| 📋 **Shared queue** | Add, drag to reorder, *Play next*, remove. Everyone sees the same order instantly. |
+| 📋 **Shared queue** | Now playing on top, then *Next up* with the total time. On phones, swipe a song left to remove it (with Undo) or right to play it next, and press and hold to drag it. Everyone sees the same order instantly. |
 | ❤️ **Reactions & chat** | Reactions rise across everyone's screen with your name, and **+** opens any emoji. The chat has bubbles, double-tap to ❤️, press and hold to react, reply or copy, swipe to reply, “Seen” and typing dots. |
 | 🌈 **Song colours & visuals** | The room takes on each song's colours from its artwork. *Ambient* washes the whole screen in them, swelling with the music; *Ring* hugs the cover. Computed only on your device. |
 | 🎤 **Synced lyrics** | Add a `.lrc` lyrics file and the lines light up in time with the room. |
@@ -210,7 +210,7 @@ npm start          # serves the app + realtime server on $PORT (default 3000)
 
 ```bash
 npm run dev         # app + realtime server in one process (http://localhost:5173)
-npm test            # 114 unit + multi-client integration tests (Vitest)
+npm test            # 115 unit + multi-client integration tests (Vitest)
 npm run typecheck   # TypeScript
 npm run build       # production client → dist/
 npm start           # production server (serves dist/)

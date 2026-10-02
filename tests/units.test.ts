@@ -9,6 +9,7 @@ import { firstNewIndex, focusLayout, groupMessages, needsSeparator, seenText, se
 import { EMOJI_GROUPS, isJumbo, searchEmoji } from '../src/utils/emoji.ts'
 import { dominantHues } from '../src/utils/palette.ts'
 import { normalizeViz } from '../src/audio/visualizer.ts'
+import { dropIndex } from '../src/utils/rowGestures.ts'
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts'
 import { afterFailure, assembleVerified, autoShares, chunkRanges, parseHeader, planFetch, sha256Id } from '../src/share/transfer.ts'
 
@@ -384,5 +385,16 @@ describe('chat runs', () => {
     const msgs = [m('a', 1000), m('b', 2000), m('c', 3000)]
     expect(groupMessages(msgs).length).toBe(1)
     expect(groupMessages(msgs, undefined, 'b').map(g => g.messages.map(x => x.id))).toEqual([['a'], ['b', 'c']])
+  })
+})
+
+describe('queue drag', () => {
+  it('a held row lands where the finger is among the other rows', () => {
+    const mids = [25, 75, 125, 175] // four 50px rows
+    expect(dropIndex(mids, 25, 0)).toBe(0) // not moved
+    expect(dropIndex(mids, 130, 0)).toBe(2) // dragged past two rows
+    expect(dropIndex(mids, 500, 1)).toBe(3) // to the end
+    expect(dropIndex(mids, 10, 3)).toBe(0) // to the top
+    expect(dropIndex(mids, 80, 3)).toBe(2)
   })
 })

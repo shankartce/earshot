@@ -33,10 +33,12 @@ export function Dock() {
     const card = ref.current?.firstElementChild as HTMLElement | null
     const root = document.documentElement
     if (!card) return
-    const ro = new ResizeObserver(() => {
+    const measure = () => {
       root.style.setProperty('--dock-h', `${card.offsetHeight + 8}px`)
       document.body.style.paddingBottom = `calc(${card.offsetHeight + 16}px + var(--safe-bottom))`
-    })
+    }
+    measure() // now, not only on the first observer callback (those wait for a rendered frame)
+    const ro = new ResizeObserver(measure)
     ro.observe(card)
     return () => {
       ro.disconnect()

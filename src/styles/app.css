@@ -251,6 +251,8 @@ fieldset:disabled .segmented label { cursor: not-allowed; opacity: 0.6; }
 /* ============ toasts ============ */
 .toasts { position: fixed; z-index: 50; left: 50%; bottom: calc(18px + var(--safe-bottom)); transform: translateX(-50%); display: grid; gap: 8px; justify-items: center; pointer-events: none; width: max-content; max-width: calc(100% - 32px); }
 .toast { display: flex; align-items: center; gap: 10px; padding: 9px 16px 9px 10px; border-radius: 99px; background: rgba(38, 24, 50, 0.92); border: 1px solid var(--border-strong); backdrop-filter: var(--glass); box-shadow: var(--shadow); font-size: 14px; font-weight: 500; animation: toast-in var(--dur) var(--ease-spring); }
+.toast-action { pointer-events: auto; margin: -4px -8px -4px 4px; height: 30px; padding: 0 12px; border: 0; border-radius: 99px; background: rgba(255, 255, 255, 0.1); color: var(--accent); font-weight: 700; font-size: 13.5px; }
+.toast-action:hover { background: rgba(255, 255, 255, 0.18); }
 .toast.error { border-color: color-mix(in srgb, var(--bad) 50%, transparent); }
 .toast.error svg { color: var(--bad); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(14px) scale(0.95); } }
@@ -420,7 +422,6 @@ fieldset:disabled .segmented label { cursor: not-allowed; opacity: 0.6; }
 /* queue extras */
 .q-grip { flex: none; width: 18px; margin-left: 2px; color: var(--text-faint); cursor: grab; opacity: 0; transition: opacity var(--dur-fast); }
 .q-item:hover .q-grip { opacity: 1; }
-@media (hover: none) { .q-grip { display: none; } }
 .q-item.played:not(:hover) { opacity: 0.55; }
 .q-item.dragging { opacity: 0.35; }
 .q-item.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
@@ -818,3 +819,70 @@ kbd { font: 600 12px var(--font-mono); padding: 2px 7px; border-radius: 6px; bac
 .focus-card button { display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 12px; border: 0; border-radius: 10px; background: none; font-size: 15px; font-weight: 600; }
 .focus-card button:hover, .focus-card button:focus-visible { background: var(--surface-hover); }
 .focus-card button + button { border-top: 1px solid var(--border); border-radius: 0 0 10px 10px; }
+
+/* ============ queue: now playing, next up, swipes, hold-to-drag ============ */
+.q-head { align-items: flex-start; }
+.q-summary { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
+.q-section { font: 700 12px var(--font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); margin: 4px 8px 6px; }
+.q-hint { font-size: 12px; color: var(--text-faint); margin: 8px 8px 0; }
+.q-now { position: relative; display: flex; align-items: center; gap: 4px; padding: 10px 6px 10px 10px; margin-bottom: 14px; border-radius: 18px; overflow: hidden;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 24%, transparent), color-mix(in srgb, var(--accent-3) 10%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent); }
+.q-now-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; border: 0; background: none; padding: 0; text-align: left; border-radius: 14px; }
+.q-now .q-title { font-size: 16.5px; }
+.q-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.q-now-glow { position: absolute; inset: auto -20% -60% auto; width: 60%; height: 120%; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 35%, transparent), transparent); pointer-events: none; animation: breathe 6s ease-in-out infinite; }
+.q-who { position: absolute; right: -5px; bottom: -5px; border-radius: 50%; box-shadow: 0 0 0 2px rgb(24, 15, 32); line-height: 0; }
+/* swipe: the row's content slides over a coloured action underneath */
+.q-item { overflow: hidden; touch-action: pan-y; }
+.q-item > :not(.swipe-bg) { translate: var(--sx, 0px) 0; transition: translate 0.32s var(--ease-spring); }
+.q-item.swiping > :not(.swipe-bg) { transition: none; }
+.q-item.swiping > .q-main { background: rgb(26, 16, 34); }
+.swipe-bg { position: absolute; inset: 0; display: flex; align-items: center; gap: 8px; padding: 0 20px; font-weight: 700; font-size: 14px; border-radius: 14px; opacity: 0; transition: opacity var(--dur-fast); pointer-events: none; }
+.swipe-bg-right { justify-content: flex-start; background: var(--accent); color: var(--accent-ink); }
+.swipe-bg-left { justify-content: flex-end; background: var(--bad); color: #fff; }
+.q-item.swipe-right .swipe-bg-right, .q-item.swipe-left .swipe-bg-left { opacity: 0.45; }
+.q-item.armed .swipe-bg { transition: opacity 0.1s; }
+.q-item.armed.swipe-right .swipe-bg-right, .q-item.armed.swipe-left .swipe-bg-left { opacity: 1; }
+/* hold to drag: the held row lifts and follows the finger; the others make room */
+.q-item.lifted { z-index: 3; overflow: visible; background: var(--surface-solid); box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5); scale: 1.025; transition: scale 0.15s var(--ease-spring); }
+.q-item.shifting { transition: transform 0.2s var(--ease); }
+@media (hover: none) { .q-grip { display: block; opacity: 0.45; } }
+
+/* ============ library: select, quick add, song sheet ============ */
+.lib-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; border: 0; background: none; padding: 0; text-align: left; border-radius: 12px; }
+.lib-row { transition: background var(--dur-fast); }
+.lib-row.picked { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.tick { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--text-faint); display: grid; place-items: center; transition: background var(--dur-fast), border-color var(--dur-fast); }
+.tick.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); animation: pop 0.25s var(--ease-spring); }
+.quick-add { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); transition: background var(--dur-fast), color var(--dur-fast), transform var(--dur-fast) var(--ease-spring); }
+.quick-add:hover { background: var(--surface-hover); }
+.quick-add:active { transform: scale(0.88); }
+.quick-add.done { background: color-mix(in srgb, var(--ok) 18%, transparent); border-color: color-mix(in srgb, var(--ok) 45%, transparent); color: var(--ok); }
+.quick-add.done svg { animation: pop 0.3s var(--ease-spring); }
+.lib-tools { align-items: flex-start; }
+.lib-tools > .btn { flex: none; height: 44px; }
+.lib-list.selecting { padding-bottom: 84px; }
+.select-bar { position: fixed; z-index: 41; left: 8px; right: 8px; bottom: calc(var(--dock-h, 0px) + var(--safe-bottom) + 8px); display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 8px 16px; border-radius: 20px; background: var(--surface-solid); border: 1px solid var(--border-strong); box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6); animation: toast-in var(--dur) var(--ease-spring); }
+.select-bar .row { gap: 4px; flex-wrap: nowrap; }
+.select-count { font-weight: 650; font-size: 14px; white-space: nowrap; }
+@media (min-width: 1000px) { .select-bar { left: 50%; right: auto; width: min(620px, calc(100% - 32px)); translate: -50% 0; } }
+.song-sheet-head { display: flex; align-items: center; gap: 14px; margin: -4px 0 14px; }
+.song-sheet-head .cover { border-radius: 12px; flex: none; }
+.note.small { font-size: 13px; padding: 8px 12px; }
+
+/* ============ phones: queue and library as edge-to-edge screens ============ */
+@media (max-width: 999px) {
+  .room-mobile .queue.panel { background: none; border: 0; padding: 0; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .room-mobile .q-head h2 { font: 800 26px/1.1 var(--font-display); letter-spacing: -0.02em; }
+  .library-page { padding: 0 var(--gutter) 24px; }
+  .lib-card { background: none; border: 0; box-shadow: none; padding: 6px 0 0; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .lib-nav { margin-bottom: 2px; }
+  .lib-head { margin: 4px 0 14px; }
+  .lib-head .display-sm { font-size: 30px; }
+  /* tabs and search stay reachable while you scroll a long library */
+  .lib-tabs { position: sticky; top: 0; z-index: 6; margin: 0 calc(var(--gutter) * -1) 10px; padding: 8px var(--gutter); border: 0; border-radius: 0; background: rgb(18, 10, 24); }
+  .sort select { min-width: 0; width: 104px; padding-left: 12px; padding-right: 6px; }
+  .lib-tools { gap: 8px; }
+  .lib-tools { position: sticky; top: 58px; z-index: 5; margin: 0 calc(var(--gutter) * -1); padding: 0 var(--gutter); background: rgb(18, 10, 24); }
+}
