@@ -1,5 +1,5 @@
 // /room/:code — joins (or shows a join gate), then renders the shared listening room.
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { useLocation, useRoute } from 'preact-iso'
 import type { RoomPeek } from '../../shared/events.ts'
 import type { Profile } from '../../shared/types.ts'
@@ -7,9 +7,10 @@ import { parseCode } from '../../shared/validate.ts'
 import { driftMs, readiness, roomPosition, tuneIn, unlockAudio } from '../audio/player.ts'
 import { Icon } from '../components/icons.tsx'
 import { NowPlaying } from '../components/NowPlaying.tsx'
-import { Participants } from '../components/Participants.tsx'
+import { Participants, ProfileSheet } from '../components/Participants.tsx'
 import { ProfileFields } from '../components/ProfileForm.tsx'
 import { Chat } from '../components/Chat.tsx'
+import { FloatingReactions } from '../components/Reactions.tsx'
 import { MOBILE } from '../components/Dock.tsx'
 import { mobileTab } from '../state/ui.ts'
 import { Queue } from '../components/Queue.tsx'
@@ -19,7 +20,7 @@ import { copyText, inviteLink, SettingsSheet, ShareSheet } from '../components/R
 import { Avatar, ConnectionPill, Empty } from '../components/ui.tsx'
 import { clock } from '../realtime/socket.ts'
 import { profile, randomAvatar, saveProfile, tokenFor } from '../state/profile.ts'
-import { canControl, connection, currentItem, joinRoom, leaveRoom, peekRoom, playback, room } from '../state/room.ts'
+import { canControl, connection, currentItem, joinRoom, leaveRoom, peekRoom, playback, room, togglePlay } from '../state/room.ts'
 import { hues } from '../utils/format.ts'
 
 const GONE = "That room isn't available."
@@ -142,11 +143,21 @@ function RoomView() {
   const wide = useMedia('(min-width: 1360px)')
   const mobile = useMedia(MOBILE)
   useShortcuts()
+  // The phone chat sizes itself to the space under the header (one or two rows, depending on width).
+  const headRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const el = headRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => document.documentElement.style.setProperty('--head-h', `${el.offsetHeight}px`))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   return (
     <div class={`room${r.playback.isPlaying ? ' playing' : ''}`} style={{ '--h1': h1, '--h2': h2 }}>
       <div class="room-glow" aria-hidden="true" />
-      <header class="room-head">
+      <FloatingReactions />
+      <header class="room-head" ref={headRef}>
         <div class="room-title">
           <span class="room-emoji" aria-hidden="true">{r.emoji}</span>
           <div>
@@ -188,6 +199,7 @@ function RoomView() {
 
       <ShareSheet open={share} onClose={() => setShare(false)} />
       <SettingsSheet open={settings} onClose={() => setSettings(false)} />
+      <ProfileSheet />
       {debug && (
         <pre class="debug" aria-hidden="true">
           {`offset ${clock.offset.toFixed(1)}ms  rtt ${clock.rtt.toFixed(1)}ms\n`}
@@ -231,9 +243,8 @@ function useShortcuts() {
       // Enter belong to it — after clicking Play, J/L/N/P should still work.
       if (target.closest('input, textarea, select, [contenteditable], dialog')) return
       if (target.closest('button, a, [role=tab]') && (e.key === ' ' || e.key === 'Enter')) return
-      const playing = room.value?.playback.isPlaying
       const act: Record<string, () => void> = {
-        ' ': () => { if (readiness.value === 'needs-tap') tuneIn(); playback({ type: playing ? 'PAUSE' : 'PLAY' }) },
+        ' ': () => { if (readiness.value === 'needs-tap') tuneIn(); togglePlay() },
         k: () => act[' '](),
         j: () => playback({ type: 'SEEK', position: Math.max(0, roomPosition.value - 10) }),
         l: () => playback({ type: 'SEEK', position: roomPosition.value + 10 }),

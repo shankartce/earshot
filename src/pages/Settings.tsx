@@ -3,8 +3,8 @@ import type { Profile } from '../../shared/types.ts'
 import { prefs, setPrefs } from '../audio/player.ts'
 import { ProfileFields } from '../components/ProfileForm.tsx'
 import { DEFAULT_DRIFT } from '../sync/drift.ts'
-import { profile, randomAvatar, saveProfile } from '../state/profile.ts'
-import { toast } from '../state/room.ts'
+import { profile, randomAvatar } from '../state/profile.ts'
+import { room, toast, updateProfile } from '../state/room.ts'
 import { autoFetch, setAutoFetch } from '../share/p2p.ts'
 import { autoShare, setAutoShare } from '../library/library.ts'
 import { AutoShareSheet } from '../components/ShareSheet.tsx'
@@ -34,11 +34,11 @@ export function Settings() {
       <div class="card narrow">
         <BackLink />
         <h1 class="display-sm">Settings</h1>
-        <form onSubmit={e => { e.preventDefault(); saveProfile(p); toast('Profile saved') }}>
+        <form onSubmit={async e => { e.preventDefault(); if ((await updateProfile(p)).ok) toast('Profile saved') }}>
           <h2 class="section-h">You</h2>
           <ProfileFields value={p} onChange={setP} />
           <button class="btn primary" disabled={!p.displayName.trim()}>Save profile</button>
-          <p class="hint">Changes show up the next time you join a room.</p>
+          <p class="hint">{room.value ? `Updates in “${room.value.name}” right away.` : 'Used the next time you create or join a room.'}</p>
         </form>
 
         <hr class="sep" />

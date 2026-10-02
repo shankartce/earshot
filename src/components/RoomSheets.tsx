@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'preact/hooks'
 import type { Permission } from '../../shared/types.ts'
 import { demoEnabled, ROOM_EMOJI } from '../state/profile.ts'
-import { isHost, participantById, room, toast, updateSettings } from '../state/room.ts'
+import { isHost, me, participantById, room, toast, updateSettings } from '../state/room.ts'
+import { openProfile } from './Participants.tsx'
 import { Icon } from './icons.tsx'
 import { Sheet } from './ui.tsx'
 
@@ -115,6 +116,11 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
       <div class="field">
         <Toggle label="Allow chat" checked={s.allowChat} disabled={!host} onChange={v => updateSettings({ allowChat: v })} />
         <Toggle label="Allow reactions" checked={s.allowReactions} disabled={!host} onChange={v => updateSettings({ allowReactions: v })} />
+      </div>
+      <hr class="sep" />
+      <div class="row">
+        <button class="btn" onClick={() => { onClose(); openProfile(me.value) }}><Icon name="settings" size={16} /> Your profile</button>
+        <a class="btn ghost" href="/settings" onClick={onClose}>App settings (sync, sharing)</a>
       </div>
     </Sheet>
   )

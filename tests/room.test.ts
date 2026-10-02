@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { positionAt } from '../shared/playback.ts'
 import type { Profile, Track } from '../shared/types.ts'
 import {
-  addChat, addParticipant, applyPlayback, applyQueue, applySettings, createRoom, ensureHost, isOffering, offerShare,
-  reactToMessage, resumeParticipant, setOffline, snapshot, withdrawShare, type Room,
+  addChat, addParticipant, applyPlayback, applyQueue, applySettings, createRoom, ensureHost, isOffering, kick, makeHost,
+  markSeen, offerShare, reactToMessage, resumeParticipant, setOffline, snapshot, updateProfile, withdrawShare, type Room,
 } from '../server/state/room.ts'
 
 const profile = (name: string): Profile => ({ displayName: name, avatar: { emoji: '🙂', color: '#ff8844' } })
@@ -255,5 +255,61 @@ describe('presence, settings, chat', () => {
     expect(room.chat.at(-1)!.reactions).toEqual({ '❤️': ['sam'] })
     reactToMessage(room, 'sam', 'id119', '❤️')
     expect(room.chat.at(-1)!.reactions).toEqual({})
+  })
+})
+
+describe('chat replies, seen and reactions', () => {
+  it("a reply quotes the server's stored original, trimmed; unknown ids are ignored", () => {
+    const room = setup(0)
+    const orig = addChat(room, 'alex', 'x'.repeat(300), 1000, 'm1') as any
+    const reply = addChat(room, 'sam', 'agreed', 2000, 'm2', orig.id) as any
+    expect(reply.replyTo).toEqual({ id: 'm1', authorId: 'alex', text: 'x'.repeat(100) })
+    expect((addChat(room, 'sam', 'hm', 3000, 'm3', 'nope') as any).replyTo).toBeUndefined()
+  })
+
+  it('a message holds at most 20 different reactions (existing ones can still be added to)', () => {
+    const room = setup(0)
+    addChat(room, 'alex', 'hi', 1000, 'm1')
+    const emojis = ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙']
+    for (const e of emojis) reactToMessage(room, 'alex', 'm1', e)
+    expect(reactToMessage(room, 'alex', 'm1', '🫠')).toBeNull()
+    expect(reactToMessage(room, 'sam', 'm1', '😀')!.reactions['😀']).toEqual(['alex', 'sam'])
+  })
+
+  it("seen only moves forward, using the message's server time", () => {
+    const room = setup(0)
+    addChat(room, 'alex', 'one', 1000, 'm1')
+    addChat(room, 'alex', 'two', 2000, 'm2')
+    expect(markSeen(room, 'sam', 'm2')).toBe(true)
+    expect(markSeen(room, 'sam', 'm1')).toBe(false)
+    expect(room.participants.find(p => p.id === 'sam')!.seenAt).toBe(2000)
+  })
+})
+
+describe('people: profile, host, remove', () => {
+  it('profile edits apply in place', () => {
+    const room = setup(0)
+    updateProfile(room, 'sam', profile('Samantha'))
+    expect(room.participants.find(p => p.id === 'sam')!.displayName).toBe('Samantha')
+  })
+
+  it('only the host can hand over host, and only to someone here', () => {
+    const room = setup(0)
+    expect(makeHost(room, 'sam', 'sam').ok).toBe(false)
+    expect(makeHost(room, 'alex', 'sam').ok).toBe(true)
+    expect(room.hostId).toBe('sam')
+    setOffline(room, 'alex', 5000)
+    expect(makeHost(room, 'sam', 'alex').ok).toBe(false)
+  })
+
+  it("removing someone revokes their token and share offers; the host can't remove themselves", () => {
+    const room = setup(1)
+    offerShare(room, 'sam', room.queue.items[0].track.id, 'cc-by')
+    expect(kick(room, 'sam', 'alex').ok).toBe(false)
+    expect(kick(room, 'alex', 'alex').ok).toBe(false)
+    expect(kick(room, 'alex', 'sam').ok).toBe(true)
+    expect(room.participants.map(p => p.id)).toEqual(['alex'])
+    expect(resumeParticipant(room, 'tok-sam', profile('Sam'), 6000)).toBeNull()
+    expect(isOffering(room, 'sam', room.queue.items[0].track.id)).toBe(false)
   })
 })

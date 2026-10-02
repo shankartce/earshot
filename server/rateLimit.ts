@@ -10,6 +10,8 @@ export const RULES: Rules = {
   join: [5, 10_000],
   signal: [60, 10_000], // WebRTC handshake messages (ICE candidates come in bursts)
   share: [100, 10_000], // tiny metadata messages; clients reconcile against server state
+  seen: [10, 5_000],
+  people: [10, 10_000], // profile edits, make host, remove
 }
 
 export function rateLimiter(rules: Rules = RULES) {

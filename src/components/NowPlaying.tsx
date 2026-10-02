@@ -1,5 +1,5 @@
 // The stage: artwork, song info, progress, transport controls, and the local-readiness state.
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { heldHere, isIOS, mutedHere, prefs, readiness, roomPosition, setPrefs, syncStatus, tuneIn, unlockAudio, unplayable } from '../audio/player.ts'
 import { vizStyle } from '../audio/visualizer.ts'
 import { stageView } from '../state/ui.ts'
@@ -9,36 +9,33 @@ import { Lyrics } from './Lyrics.tsx'
 import { StageTools, Visualizer } from './Visualizer.tsx'
 import { artUrls, confirmMatch, importFiles, rejectMatch, resolveLocal } from '../library/library.ts'
 import { reportImport } from '../state/actions.ts'
-import { canControl, currentItem, participantById, playback, room, toast } from '../state/room.ts'
+import { canControl, currentItem, mayControl, optimisticPlaying, participantById, playback, room, shownPlaying, toast, togglePlay } from '../state/room.ts'
 import { fmtTime } from '../utils/format.ts'
 import { Icon } from './icons.tsx'
-import { FloatingReactions, ReactionBar } from './Reactions.tsx'
+import { ReactionBar } from './Reactions.tsx'
 import { Avatar, Cover, Equalizer, FileButton } from './ui.tsx'
-
-const HOST_ONLY = 'Only the host can control playback in this room'
 
 export function NowPlaying() {
   const r = room.value!
   const item = currentItem.value
-  const pb = r.playback
   const t = item?.track
   const addedBy = item && participantById(item.addedBy)
   const local = t ? resolveLocal(t) : null
   const art = local?.status === 'ready' ? artUrls.value.get(local.local.id) : null
   const showLyrics = stageView.value === 'lyrics' && !!t
+  const swipe = useSwipe(showLyrics) // the artwork remounts when lyrics toggle
+  const playing = shownPlaying.value
 
   return (
-    <section class={`stage${pb.isPlaying ? ' is-playing' : ''} viz-${vizStyle.value}${showLyrics ? ' with-lyrics' : ''}`} aria-label="Now playing">
+    <section class={`stage${playing ? ' is-playing' : ''} viz-${vizStyle.value}${showLyrics ? ' with-lyrics' : ''}`} aria-label="Now playing">
       {showLyrics ? (
         <div class="lyrics-wrap">
-          <FloatingReactions />
           <Lyrics track={t} />
         </div>
       ) : (
-        <div class="art-wrap">
+        <div class="art-wrap" ref={swipe}>
           <Visualizer placement="ring" />
           <div class="vinyl" aria-hidden="true" />
-          <FloatingReactions />
           <Cover id={t?.id} art={art} class="art" key={t?.id} />
         </div>
       )}
@@ -47,7 +44,7 @@ export function NowPlaying() {
 
       <div class="np-meta">
         <p class="eyebrow np-state">
-          {item ? pb.isPlaying ? <><Equalizer /> Playing together</> : 'Paused' : 'Nothing playing yet'}
+          {item ? playing ? <><Equalizer /> Playing together</> : 'Paused' : 'Nothing playing yet'}
         </p>
         <h2 class="np-title" key={t?.id}>{t?.title ?? 'Pick something to play'}</h2>
         <p class="np-artist">
@@ -153,17 +150,43 @@ function Readiness() {
 
 function Progress() {
   const t = currentItem.value!.track
+  const version = room.value!.playback.version
   const [scrub, setScrub] = useState<number | null>(null)
-  const pos = scrub ?? roomPosition.value
-  const dur = t.duration || Math.max(pos, 1)
-  const disabled = !canControl.value
+  // After a seek, hold the bar at the target until the room confirms it (no snap back to the old spot).
+  const [held, setHeld] = useState<{ pos: number; version: number } | null>(null)
+  useEffect(() => { if (held && held.version !== version) setHeld(null) }, [version])
+  useEffect(() => {
+    if (!held) return
+    const timer = setTimeout(() => setHeld(null), 2000)
+    return () => clearTimeout(timer)
+  }, [held])
+  const dur = t.duration || Math.max(roomPosition.value, 1)
+  const pos = scrub ?? held?.pos ?? roomPosition.value
+  const guest = !canControl.value
+  const seek = (to: number) => {
+    const p = Math.min(Math.max(0, to), dur)
+    setHeld({ pos: p, version })
+    playback({ type: 'SEEK', position: p })
+  }
+  const keys: Record<string, number> = { ArrowLeft: -5, ArrowDown: -5, ArrowRight: 5, ArrowUp: 5, PageDown: -30, PageUp: 30 }
   return (
-    <div class="progress">
-      <input type="range" class="range seek" min={0} max={dur} step={0.1} value={pos} disabled={disabled}
-        aria-label="Seek" aria-valuetext={`${fmtTime(pos)} of ${fmtTime(dur)}`} title={disabled ? HOST_ONLY : undefined}
-        style={{ '--p': `${(pos / dur) * 100}%` }}
-        onInput={e => setScrub(Number(e.currentTarget.value))}
-        onChange={e => { playback({ type: 'SEEK', position: Number(e.currentTarget.value) }); setScrub(null) }} />
+    <div class={`progress${scrub !== null ? ' scrubbing' : ''}${guest ? ' guest' : ''}`} style={{ '--p': `${(pos / dur) * 100}%` }}>
+      <div class="seek-wrap">
+        <input type="range" class="range seek" min={0} max={dur} step={0.1} value={pos} disabled={guest}
+          aria-label="Seek" aria-valuetext={`${fmtTime(pos)} of ${fmtTime(dur)}`}
+          onInput={e => setScrub(Number(e.currentTarget.value))}
+          onChange={e => { seek(Number(e.currentTarget.value)); setScrub(null) }}
+          onKeyDown={e => {
+            // One seek per key press (the native range would send a stream of tiny ones).
+            const d = keys[e.key]
+            const to = d !== undefined ? pos + d : e.key === 'Home' ? 0 : e.key === 'End' ? dur - 1 : null
+            if (to === null) return
+            e.preventDefault()
+            seek(to)
+          }} />
+        {scrub !== null && <span class="seek-bubble" aria-hidden="true">{fmtTime(scrub)}</span>}
+        {guest && <span class="seek-guard" onClick={mayControl} aria-hidden="true" />}
+      </div>
       <div class="times">
         <span>{fmtTime(pos)}</span>
         <span aria-label={`${fmtTime(dur - pos)} remaining`}>-{fmtTime(dur - pos)}</span>
@@ -172,29 +195,97 @@ function Progress() {
   )
 }
 
+/** True once a command has been waiting longer than `ms` (shows a soft "working on it" ring). */
+function useSlow(pending: boolean, ms = 400) {
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    if (!pending) return setSlow(false)
+    const timer = setTimeout(() => setSlow(true), ms)
+    return () => clearTimeout(timer)
+  }, [pending])
+  return slow
+}
+
 function Controls() {
   const r = room.value!
-  const playing = r.playback.isPlaying
+  const playing = shownPlaying.value
   const has = !!currentItem.value || r.queue.items.length > 0
-  const off = !canControl.value || !has
-  const title = !canControl.value ? HOST_ONLY : undefined
+  const guest = !canControl.value
+  const slow = useSlow(optimisticPlaying.value !== null)
+  // Guests can tap (and learn why nothing happens); with nothing queued the buttons are truly off.
+  const act = (fn: () => void) => () => { if (mayControl()) fn() }
   const seekBy = (d: number) => playback({ type: 'SEEK', position: Math.max(0, roomPosition.value + d) })
+  const common = { disabled: !has, 'aria-disabled': guest || undefined }
   return (
-    <div class="controls" role="group" aria-label="Playback controls">
-      <button class="icon-btn" onClick={() => seekBy(-10)} disabled={off} title={title} aria-label="Seek back 10 seconds"><Icon name="back10" size={22} /></button>
-      <button class="icon-btn lg" onClick={() => playback({ type: 'PREVIOUS' })} disabled={off} title={title} aria-label="Previous track"><Icon name="prev" size={26} /></button>
-      <button class="play-btn" disabled={off} title={title} aria-label={playing ? 'Pause' : 'Play'} aria-keyshortcuts="Space K"
-        onClick={() => {
+    <div class={`controls${guest ? ' guest' : ''}`} role="group" aria-label="Playback controls">
+      <button class="icon-btn" {...common} onClick={act(() => seekBy(-10))} aria-label="Seek back 10 seconds"><Icon name="back10" size={22} /></button>
+      <button class="icon-btn lg" {...common} onClick={act(() => playback({ type: 'PREVIOUS' }))} aria-label="Previous track"><Icon name="prev" size={26} /></button>
+      <button class={`play-btn${slow ? ' pending' : ''}`} {...common} aria-label={playing ? 'Pause' : 'Play'} aria-keyshortcuts="Space K"
+        onClick={act(() => {
           if (readiness.value === 'needs-tap') tuneIn()
           else unlockAudio()
-          playback({ type: playing ? 'PAUSE' : 'PLAY' })
-        }}>
-        <Icon name={playing ? 'pause' : 'play'} size={30} />
+          togglePlay()
+        })}>
+        <span class="pp" data-state={playing ? 'playing' : 'paused'} aria-hidden="true">
+          <Icon name="play" size={30} />
+          <Icon name="pause" size={30} />
+        </span>
       </button>
-      <button class="icon-btn lg" onClick={() => playback({ type: 'NEXT' })} disabled={off} title={title} aria-label="Next track"><Icon name="next" size={26} /></button>
-      <button class="icon-btn" onClick={() => seekBy(10)} disabled={off} title={title} aria-label="Seek forward 10 seconds"><Icon name="fwd10" size={22} /></button>
+      <button class="icon-btn lg" {...common} onClick={act(() => playback({ type: 'NEXT' }))} aria-label="Next track"><Icon name="next" size={26} /></button>
+      <button class="icon-btn" {...common} onClick={act(() => seekBy(10))} aria-label="Seek forward 10 seconds"><Icon name="fwd10" size={22} /></button>
     </div>
   )
+}
+
+/** Swipe the artwork sideways for the next / previous song; vertical scrolling is left alone. */
+function useSwipe(remountKey: unknown) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    let start: { x: number; y: number; id: number } | null = null
+    let swiping = false
+    const set = (dx: number) => el.style.setProperty('--swipe', `${dx}px`)
+    const down = (e: PointerEvent) => {
+      if (!e.isPrimary || e.button !== 0) return
+      start = { x: e.clientX, y: e.clientY, id: e.pointerId }
+      swiping = false
+    }
+    const move = (e: PointerEvent) => {
+      if (!start || e.pointerId !== start.id) return
+      const dx = e.clientX - start.x
+      const dy = e.clientY - start.y
+      if (!swiping) {
+        if (Math.abs(dy) > 12) { start = null; return } // a scroll, not a swipe
+        if (Math.abs(dx) < 12) return
+        swiping = true
+        el.classList.add('swiping')
+        try { el.setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
+      }
+      set(Math.max(-140, Math.min(140, dx)))
+    }
+    const up = (e: PointerEvent) => {
+      if (!start || e.pointerId !== start.id) return
+      const dx = e.clientX - start.x
+      const was = swiping
+      start = null
+      swiping = false
+      el.classList.remove('swiping')
+      set(0)
+      if (was && Math.abs(dx) > 70 && mayControl()) playback({ type: dx < 0 ? 'NEXT' : 'PREVIOUS' })
+    }
+    el.addEventListener('pointerdown', down)
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', up)
+    el.addEventListener('pointercancel', up)
+    return () => {
+      el.removeEventListener('pointerdown', down)
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', up)
+      el.removeEventListener('pointercancel', up)
+    }
+  }, [remountKey])
+  return ref
 }
 
 function Volume() {

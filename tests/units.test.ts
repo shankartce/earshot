@@ -5,7 +5,8 @@ import {
 } from '../shared/validate.ts'
 import { Clock, estimate, shouldAccept } from '../src/sync/clock.ts'
 import { DEFAULT_DRIFT, decide, learnSeekLead, migratePrefs } from '../src/sync/drift.ts'
-import { groupMessages, typingText } from '../src/utils/chat.ts'
+import { groupMessages, needsSeparator, seenText, separatorLabel, typingText } from '../src/utils/chat.ts'
+import { EMOJI_GROUPS, isJumbo, searchEmoji } from '../src/utils/emoji.ts'
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts'
 import { afterFailure, assembleVerified, autoShares, chunkRanges, parseHeader, planFetch, sha256Id } from '../src/share/transfer.ts'
 
@@ -268,5 +269,54 @@ describe('chat display', () => {
     expect(typingText(['Sam'])).toBe('Sam is typing…')
     expect(typingText(['Sam', 'Kai'])).toBe('Sam and Kai are typing…')
     expect(typingText(['Sam', 'Kai', 'Noor'])).toBe('Several people are typing…')
+  })
+})
+
+describe('emoji', () => {
+  it('reactions accept any single emoji, never text or markup', () => {
+    for (const e of ['👍🏽', '🫠', '❤️‍🔥', '🇮🇳', '👨‍👩‍👧', '❤️']) expect(parseReaction(e)).toBe(e)
+    for (const x of ['lol', '<b>', '123', '#', '', ' ', '🔥'.repeat(9), 42, null]) expect(parseReaction(x)).toBeNull()
+  })
+
+  it('every curated picker emoji is accepted by the server', () => {
+    const all = EMOJI_GROUPS.flatMap(g => g.items.map(i => i.e))
+    expect(all.length).toBeGreaterThan(200)
+    expect(all.filter(e => parseReaction(e) === null)).toEqual([])
+  })
+
+  it('search matches by name words', () => {
+    expect(searchEmoji('fire').map(x => x.e)).toContain('🔥')
+    expect(searchEmoji('broken heart').map(x => x.e)).toEqual(['💔'])
+    expect(searchEmoji('   ')).toEqual([])
+  })
+
+  it('1 to 3 emojis (and nothing else) show jumbo', () => {
+    expect(isJumbo('🔥')).toBe(true)
+    expect(isJumbo('❤️‍🔥 🎵')).toBe(true)
+    expect(isJumbo('😂😂😂')).toBe(true)
+    expect(isJumbo('😂😂😂😂')).toBe(false)
+    expect(isJumbo('lol 😂')).toBe(false)
+    expect(isJumbo('3')).toBe(false)
+  })
+})
+
+describe('chat display helpers', () => {
+  it('a time separator starts the chat and follows a 10 minute lull', () => {
+    expect(needsSeparator(null, 1000)).toBe(true)
+    expect(needsSeparator(1000, 1000 + 9 * 60_000)).toBe(false)
+    expect(needsSeparator(1000, 1000 + 10 * 60_000)).toBe(true)
+  })
+
+  it('separator labels name older days', () => {
+    const now = new Date(2026, 9, 3, 15, 0).getTime()
+    expect(separatorLabel(new Date(2026, 9, 3, 9, 5).getTime(), now)).not.toMatch(/Yesterday|Oct/)
+    expect(separatorLabel(new Date(2026, 9, 2, 9, 5).getTime(), now)).toMatch(/^Yesterday/)
+  })
+
+  it('"Seen" wording', () => {
+    expect(seenText([], 1)).toBe('')
+    expect(seenText(['Sam'], 1)).toBe('Seen')
+    expect(seenText(['Sam', 'Kim'], 2)).toBe('Seen by everyone')
+    expect(seenText(['Sam'], 3)).toBe('Seen by Sam')
   })
 })

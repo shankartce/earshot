@@ -12,7 +12,7 @@ export type Result =
   | { ok: true; playback?: boolean; queue?: boolean; history?: boolean }
   | { ok: false; error: string }
 
-export const LIMITS = { queue: 500, participants: 50, chat: 100, history: 20, previousRestart: 3 }
+export const LIMITS = { queue: 500, participants: 50, chat: 100, history: 20, previousRestart: 3, reactionsPerMessage: 20, replySnippet: 100 }
 
 const fail = (error: string): Result => ({ ok: false, error })
 
@@ -47,7 +47,7 @@ export function addParticipant(room: Room, profile: Profile, now: number, id: st
   return p
 }
 
-function removeParticipant(room: Room, id: string) {
+export function removeParticipant(room: Room, id: string) {
   room.participants = room.participants.filter(p => p.id !== id)
   for (const [t, pid] of Object.entries(room.tokens)) if (pid === id) delete room.tokens[t]
 }
@@ -253,10 +253,13 @@ export function applySettings(room: Room, actorId: string, patch: Partial<RoomSe
   return { ok: true }
 }
 
-export function addChat(room: Room, authorId: string, text: string, now: number, id: string): ChatMessage | string {
+export function addChat(room: Room, authorId: string, text: string, now: number, id: string, replyToId?: string): ChatMessage | string {
   if (!room.settings.allowChat) return 'Chat is turned off in this room.'
   if (!text) return 'Message is empty.'
   const msg: ChatMessage = { id, authorId, text, at: now, reactions: {} }
+  // The quoted snippet comes from our stored copy, never from the client.
+  const orig = replyToId ? room.chat.find(m => m.id === replyToId) : undefined
+  if (orig) msg.replyTo = { id: orig.id, authorId: orig.authorId, text: [...orig.text].slice(0, LIMITS.replySnippet).join('') }
   room.chat.push(msg)
   if (room.chat.length > LIMITS.chat) room.chat.splice(0, room.chat.length - LIMITS.chat)
   return msg
@@ -267,7 +270,44 @@ export function reactToMessage(room: Room, actorId: string, messageId: string, e
   const msg = room.chat.find(m => m.id === messageId)
   if (!msg || !room.settings.allowReactions) return null
   const who = msg.reactions[emoji] ?? []
+  if (!who.length && Object.keys(msg.reactions).length >= LIMITS.reactionsPerMessage) return null
   msg.reactions[emoji] = who.includes(actorId) ? who.filter(id => id !== actorId) : [...who, actorId]
   if (!msg.reactions[emoji].length) delete msg.reactions[emoji]
   return msg
+}
+
+/** You've read up to this message. Only ever moves forward; uses the message's own server time. */
+export function markSeen(room: Room, pid: string, messageId: string): boolean {
+  const p = room.participants.find(x => x.id === pid)
+  const msg = room.chat.find(m => m.id === messageId)
+  if (!p || !msg || (p.seenAt ?? 0) >= msg.at) return false
+  p.seenAt = msg.at
+  return true
+}
+
+// ---------- people ----------
+
+export function updateProfile(room: Room, pid: string, profile: Profile): boolean {
+  const p = room.participants.find(x => x.id === pid)
+  if (!p) return false
+  Object.assign(p, profile)
+  return true
+}
+
+export function makeHost(room: Room, actorId: string, targetId: string): Result {
+  if (room.hostId !== actorId) return fail('Only the host can do that.')
+  const t = room.participants.find(p => p.id === targetId)
+  if (!t?.isOnline) return fail("They're not in the room right now.")
+  room.hostId = targetId
+  return { ok: true }
+}
+
+/** The host removes someone: their session token stops working and their share offers go. */
+export function kick(room: Room, actorId: string, targetId: string): Result {
+  if (room.hostId !== actorId) return fail('Only the host can do that.')
+  if (targetId === actorId) return fail("You can't remove yourself.")
+  if (!room.participants.some(p => p.id === targetId)) return fail("They're not in the room.")
+  clearShares(room, targetId)
+  removeParticipant(room, targetId)
+  return { ok: true }
 }

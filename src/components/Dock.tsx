@@ -4,7 +4,7 @@ import { useEffect } from 'preact/hooks'
 import { useLocation } from 'preact-iso'
 import { heldHere, readiness, roomPosition, tuneIn, unlockAudio } from '../audio/player.ts'
 import { artUrls, resolveLocal } from '../library/library.ts'
-import { canControl, currentItem, playback, room, shownQueue } from '../state/room.ts'
+import { canControl, currentItem, mayControl, room, shownPlaying, shownQueue, togglePlay } from '../state/room.ts'
 import { isActive, receiving } from '../share/p2p.ts'
 import { unread } from '../state/social.ts'
 import { mobileTab, transition } from '../state/ui.ts'
@@ -70,7 +70,7 @@ function MiniPlayer({ onOpen }: { onOpen: () => void }) {
   const t = item?.track
   const local = t ? resolveLocal(t) : null
   const art = local?.status === 'ready' ? artUrls.value.get(local.local.id) : null
-  const playing = r.playback.isPlaying
+  const playing = shownPlaying.value
   const pct = t?.duration ? (roomPosition.value / t.duration) * 100 : 0
   return (
     <div class="mini" role="region" aria-label="Mini player">
@@ -91,10 +91,12 @@ function MiniPlayer({ onOpen }: { onOpen: () => void }) {
           <Icon name={heldHere.value ? 'play' : 'tap'} size={16} /> {heldHere.value ? 'Resume' : 'Tap to listen'}
         </button>
       ) : item && (
-        <button class="icon-btn mini-play" disabled={!canControl.value} aria-label={playing ? 'Pause' : 'Play'}
-          title={canControl.value ? undefined : 'Only the host can control playback in this room'}
-          onClick={() => { unlockAudio(); playback({ type: playing ? 'PAUSE' : 'PLAY' }) }}>
-          <Icon name={playing ? 'pause' : 'play'} size={24} />
+        <button class="icon-btn mini-play" aria-disabled={!canControl.value || undefined} aria-label={playing ? 'Pause' : 'Play'}
+          onClick={() => { if (!mayControl()) return; unlockAudio(); togglePlay() }}>
+          <span class="pp" data-state={playing ? 'playing' : 'paused'} aria-hidden="true">
+            <Icon name="play" size={24} />
+            <Icon name="pause" size={24} />
+          </span>
         </button>
       )}
     </div>

@@ -47,6 +47,7 @@ export interface Participant extends Profile {
   joinedAt: number
   lastSeen: number
   readiness: Readiness // for the current queue item only
+  seenAt?: number // server time of the newest chat message they've seen
 }
 
 export type Permission = 'host' | 'everyone'
@@ -64,6 +65,7 @@ export interface ChatMessage {
   text: string
   at: number
   reactions: Record<string, string[]> // emoji -> participant ids
+  replyTo?: { id: string; authorId: string; text: string } // snippet copied by the server from the original
 }
 
 export interface RoomMeta {

@@ -310,6 +310,61 @@ describe('chat & abuse protection', () => {
   })
 })
 
+describe('people & chat extras', () => {
+  const ask = (c: { s: Client }, event: string, arg: unknown) => new Promise<Ack>(r => (c.s.emit as any)(event, arg, r))
+
+  it('profile edits reach everyone; only the host hands over host', async () => {
+    const { people } = await roomOf(2)
+    const [alex, sam] = people
+    expect((await ask(sam, 'profile:update', profile('Sammy'))).ok).toBe(true)
+    await until(() => alex.view.state!.participants.some(p => p.displayName === 'Sammy'))
+    expect((await ask(sam, 'participant:host', sam.view.you)).ok).toBe(false)
+    expect((await ask(alex, 'participant:host', sam.view.you)).ok).toBe(true)
+    await until(() => alex.view.state!.hostId === sam.view.you)
+  })
+
+  it('the host removes someone: they are told, can no longer act, and can rejoin as a new person', async () => {
+    const { people, code } = await roomOf(2)
+    const [alex, sam] = people
+    let removed = false
+    sam.s.on('room:removed', () => { removed = true })
+    expect((await ask(sam, 'participant:remove', alex.view.you)).ok).toBe(false)
+    expect((await ask(alex, 'participant:remove', sam.view.you)).ok).toBe(true)
+    await until(() => removed && alex.view.state!.participants.length === 1)
+    expect(alex.view.events).toContain('left:Sam')
+    expect((await sam.chat('still here?')).ok).toBe(false)
+    const oldId = sam.view.you
+    const again = await sam.join(code, 'Sam', sam.view.token) // old token no longer works…
+    expect(again.ok && again.you).not.toBe(oldId) // …so they come back as someone new
+  })
+
+  it('replies carry the quoted original, and "seen" reaches the sender', async () => {
+    const { people } = await roomOf(2)
+    const [alex, sam] = people
+    const got: any[] = []
+    alex.s.on('chat:message', m => got.push(m))
+    await alex.chat('pick a song')
+    await until(() => got.length === 1)
+    expect((await new Promise<Ack>(r => sam.s.emit('chat:send', { text: 'this one', replyTo: got[0].id }, r))).ok).toBe(true)
+    await until(() => got.length === 2)
+    expect(got[1].replyTo).toMatchObject({ id: got[0].id, text: 'pick a song' })
+    sam.s.emit('chat:seen', got[1].id)
+    await until(() => (alex.view.state!.participants.find(p => p.id === sam.view.you)?.seenAt ?? 0) === got[1].at)
+  })
+
+  it('any single emoji works as a reaction; text does not', async () => {
+    const { people } = await roomOf(2)
+    const floats: string[] = []
+    people[0].s.on('reaction', r => floats.push(r.emoji))
+    people[1].s.emit('reaction:send', '🫠')
+    people[1].s.emit('reaction:send', 'lol')
+    people[1].s.emit('reaction:send', '❤️‍🔥')
+    await until(() => floats.length === 2)
+    await sleep(100)
+    expect(floats).toEqual(['🫠', '❤️‍🔥'])
+  })
+})
+
 describe('p2p sharing: the server only relays the handshake, and only for attested songs', () => {
   const signalsTo = (c: ReturnType<typeof client>) => {
     const got: any[] = []

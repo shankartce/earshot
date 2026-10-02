@@ -1,7 +1,11 @@
-// Quick reactions to the music, floated over the artwork for everyone in the room.
+// Reactions to the music: a quick bar (plus any emoji via "+"), and a full-screen layer where
+// everyone's reactions rise up the screen with the sender's name, Zoom-style.
+import { useState } from 'preact/hooks'
 import { REACTIONS } from '../../shared/types.ts'
 import { participantById, room } from '../state/room.ts'
-import { announcement, floats, lastReaction, sendReaction } from '../state/social.ts'
+import { announcement, floats, sendReaction } from '../state/social.ts'
+import { EmojiPicker } from './EmojiPicker.tsx'
+import { Icon } from './icons.tsx'
 import { Avatar } from './ui.tsx'
 
 const NAMES: Record<string, string> = {
@@ -9,30 +13,35 @@ const NAMES: Record<string, string> = {
 }
 
 export function ReactionBar() {
+  const [picking, setPicking] = useState(false)
   if (!room.value?.settings.allowReactions) return null
-  const last = lastReaction.value
   return (
     <div class="reactions">
       <div class="reaction-bar" role="group" aria-label="React to this song">
         {REACTIONS.map(e => (
           <button key={e} class="reaction-btn" aria-label={`React with ${NAMES[e] ?? e}`} onClick={() => sendReaction(e)}>{e}</button>
         ))}
+        <button class="reaction-btn more" aria-label="More reactions" aria-haspopup="dialog" onClick={() => setPicking(true)}>
+          <Icon name="plus" size={18} />
+        </button>
       </div>
-      <p class="reaction-note" aria-hidden="true">{last ? <span key={last.id}>{last.text}</span> : ' '}</p>
+      <EmojiPicker open={picking} onClose={() => setPicking(false)} onPick={sendReaction} title="React with any emoji" />
     </div>
   )
 }
 
-/** Rendered inside the artwork wrapper; purely visual (announcements go through <Announcer/>). */
+/** Full-screen, purely visual (screen readers get <Announcer/>); never blocks taps. */
 export function FloatingReactions() {
   return (
-    <div class="floats" aria-hidden="true">
+    <div class="reaction-layer" aria-hidden="true">
       {floats.value.map(f => {
         const who = participantById(f.participantId)
         return (
-          <span key={f.id} class="float" style={{ left: `${f.x}%` }}>
-            {who && <Avatar avatar={who.avatar} size={22} />}
-            <span class="float-emoji">{f.emoji}</span>
+          <span key={f.id} class="rise" style={{ left: `${f.x}%`, '--sway': `${f.sway}px`, '--rise-dur': `${f.dur}ms` }}>
+            <span class="rise-inner">
+              <span class="rise-emoji">{f.emoji}</span>
+              {who && <span class="rise-name"><Avatar avatar={who.avatar} size={16} /> {who.displayName}</span>}
+            </span>
           </span>
         )
       })}

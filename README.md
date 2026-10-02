@@ -9,7 +9,7 @@ Everyone plays their **own** copy of each song, and your music is never uploaded
 
 [![MIT License](https://img.shields.io/badge/license-MIT-ff7a59.svg)](LICENSE)
 ![Node 22.18+](https://img.shields.io/badge/node-%E2%89%A522.18-ffb454.svg)
-![Tests](https://img.shields.io/badge/tests-90%20passing-7ccf6a.svg)
+![Tests](https://img.shields.io/badge/tests-107%20passing-7ccf6a.svg)
 ![Built with Preact + Socket.IO](https://img.shields.io/badge/built%20with-Preact%20%2B%20Socket.IO-b388ff.svg)
 
 ### **▶ [Try it live: earshot-30yv.onrender.com](https://earshot-30yv.onrender.com)**
@@ -35,15 +35,15 @@ Unlike streaming services, Earshot doesn't stream anything. **Each person plays 
 
 | | |
 |---|---|
-| 🎵 **Synced playback** | Play, pause, seek and skip for everyone at once. Late joiners land at the right moment. |
+| 🎵 **Synced playback** | Play, pause, seek and skip for everyone at once; the buttons answer instantly. Swipe the artwork for the next song. Late joiners land at the right moment. |
 | 👥 **Presence** | See who's here and whether each friend is *Ready* or still needs the song. |
 | 📚 **Your library, saved** | Drop in files or whole folders. Tags and album art are read in your browser and remembered next visit. |
 | 🔍 **Smart matching** | Your file doesn't have to be byte-identical. Earshot spots *"that's the same song"* and asks before using it. |
 | 📋 **Shared queue** | Add, drag to reorder, *Play next*, remove. Everyone sees the same order instantly. |
-| ❤️ **Reactions & chat** | Float 🔥 ❤️ ✨ over the artwork for everyone, chat, react to messages, see who's typing. |
+| ❤️ **Reactions & chat** | Reactions rise across everyone's screen with your name, and **+** opens any emoji. The chat has bubbles, double-tap to ❤️, press and hold to react, reply or copy, swipe to reply, “Seen” and typing dots. |
 | 🌈 **Visualizers** | Ring, bars, waveform or glow, driven by your own audio and computed only on your device. |
 | 🎤 **Synced lyrics** | Add a `.lrc` lyrics file and the lines light up in time with the room. |
-| 👑 **Host controls** | Choose who can control playback or edit the queue, and turn chat or reactions on or off. |
+| 👑 **Host controls** | Choose who can control playback or edit the queue, and turn chat or reactions on or off. Tap anyone for their profile: hand over host, or remove someone. |
 | 📱 **Great on phones** | Install it like an app, keep listening with the screen locked, and use lock-screen controls. Bottom tabs, a mini-player that follows you around, and big touch-friendly controls. |
 
 <div align="center">
@@ -210,7 +210,7 @@ npm start          # serves the app + realtime server on $PORT (default 3000)
 
 ```bash
 npm run dev         # app + realtime server in one process (http://localhost:5173)
-npm test            # 90 unit + multi-client integration tests (Vitest)
+npm test            # 107 unit + multi-client integration tests (Vitest)
 npm run typecheck   # TypeScript
 npm run build       # production client → dist/
 npm start           # production server (serves dist/)

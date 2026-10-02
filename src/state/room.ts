@@ -5,7 +5,7 @@ import type { Ack, Joined, PlaybackCommand, QueueCommand, RoomPeek } from '../..
 import type { Participant, Profile, QueueState, RoomSettings, RoomSnapshot } from '../../shared/types.ts'
 import { applyQueue } from '../../server/state/room.ts' // the same pure reducer the server runs
 import { clock, socket } from '../realtime/socket.ts'
-import { forgetRoom, profile, rememberRoom, tokenFor } from './profile.ts'
+import { forgetRoom, profile, rememberRoom, saveProfile, tokenFor } from './profile.ts'
 
 export const room = signal<RoomSnapshot | null>(null)
 export const me = signal('')
@@ -75,9 +75,10 @@ export function leaveRoom() {
   room.value = null
   me.value = ''
   pendingQueue.value = null
+  optimisticPlaying.value = null
 }
 
-async function command(event: 'playback:command' | 'queue:command' | 'room:settings', payload: object) {
+async function command(event: 'playback:command' | 'queue:command' | 'room:settings' | 'participant:host' | 'participant:remove', payload: unknown) {
   const r = await request(event, payload)
   // "stale" means someone else acted first; their change is already on screen — nothing to report.
   if (!r.ok && r.error !== 'stale') toast(r.error, { tone: 'error' })
@@ -95,6 +96,42 @@ export function playback(cmd: WithoutVersion<PlaybackCommand>) {
   playChain = p
   return p
 }
+
+export const HOST_ONLY = 'Only the host can control playback in this room.'
+/** Controls stay tappable for guests (tooltips don't exist on phones); a tap explains instead. */
+export function mayControl() {
+  if (canControl.value) return true
+  toast(HOST_ONLY)
+  return false
+}
+
+// Play/pause answer instantly: the button (and your own audio, on pause) follow the tap, then the
+// room confirms. Only the last of several quick taps decides; a refusal snaps back to the room.
+export const optimisticPlaying = signal<boolean | null>(null)
+export const shownPlaying = computed(() => optimisticPlaying.value ?? !!room.value?.playback.isPlaying)
+let toggleSeq = 0
+export function togglePlay() {
+  const want = !shownPlaying.value
+  optimisticPlaying.value = want
+  const seq = ++toggleSeq
+  return playback({ type: want ? 'PLAY' : 'PAUSE' }).then(r => {
+    if (seq === toggleSeq) optimisticPlaying.value = null
+    return r
+  })
+}
+
+// ---- people ----
+
+/** Save your profile here and, if you're in a room, show it to everyone right away. */
+export async function updateProfile(p: Profile) {
+  saveProfile(p)
+  if (!room.value) return { ok: true } as const
+  const r = await request('profile:update', p)
+  if (!r.ok) toast(r.error, { tone: 'error' })
+  return r
+}
+export const makeHost = (pid: string) => command('participant:host', pid)
+export const removePerson = (pid: string) => command('participant:remove', pid)
 
 // ---- queue with optimistic updates ----
 // Edits show instantly (predicted with the server's own reducer), then the server's answer replaces
@@ -148,6 +185,12 @@ socket.on('connect', async () => {
   connection.value = 'online'
 })
 socket.on('disconnect', () => { connection.value = 'reconnecting' })
+socket.on('room:removed', () => {
+  if (room.value) forgetRoom(room.value.code) // the old token is dead; joining again makes you someone new
+  room.value = null
+  me.value = ''
+  toast('The host removed you from this room. You can rejoin with the link.', { tone: 'error' })
+})
 socket.io.on('reconnect_attempt', () => { connection.value = 'reconnecting' })
 
 setInterval(() => { if (socket.connected) clock.sync() }, 30_000)

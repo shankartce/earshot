@@ -5,14 +5,14 @@ import { Server, type Socket } from 'socket.io'
 import type { Ack, ClientToServer, Joined, RoomPatch, ServerToClient } from '../../shared/events.ts'
 import { positionAt } from '../../shared/playback.ts'
 import {
-  cleanText, parseCode, parsePlaybackCommand, parseProfile, parseQueueCommand, parseReaction,
+  cleanText, parseChatSend, parseCode, parsePlaybackCommand, parseProfile, parseQueueCommand, parseReaction,
   parseLicense, parseReadiness, parseSettingsPatch, parseSignal, parseTrackId,
 } from '../../shared/validate.ts'
 import { rateLimiter } from '../rateLimit.ts'
 import type { RoomStore } from '../rooms/store.ts'
 import {
-  addChat, addParticipant, applyPlayback, applyQueue, applySettings, ensureHost, reactToMessage,
-  isOffering, offerShare, resumeParticipant, setOffline, snapshot, withdrawShare, type Result, type Room,
+  addChat, addParticipant, applyPlayback, applyQueue, applySettings, ensureHost, kick, makeHost, markSeen, reactToMessage,
+  isOffering, offerShare, updateProfile, resumeParticipant, setOffline, snapshot, withdrawShare, type Result, type Room,
 } from '../state/room.ts'
 
 interface SocketData { code?: string; pid?: string }
@@ -227,16 +227,22 @@ export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: Re
       patch(c.room, { participants: true })
     })
 
-    on('chat:send', (text, reply) => {
+    on('chat:send', (raw, reply) => {
       const done = replyFn(reply)
       const c = ctx()
-      if (!c) return done({ ok: false, error: GENERIC_ERROR })
+      const p = parseChatSend(raw)
+      if (!c || !p) return done({ ok: false, error: GENERIC_ERROR })
       if (!allow('chat')) return done({ ok: false, error: "You're sending messages too quickly." })
-      const msg = addChat(c.room, c.pid, cleanText(text, 500, true), Date.now(), newId())
+      const msg = addChat(c.room, c.pid, p.text, Date.now(), newId(), p.replyTo)
       if (typeof msg === 'string') return done({ ok: false, error: msg })
       io.to(c.room.code).emit('chat:message', msg)
       store.save()
       done({ ok: true })
+    })
+
+    on('chat:seen', raw => {
+      const c = ctx()
+      if (c && typeof raw === 'string' && allow('seen') && markSeen(c.room, c.pid, raw)) patch(c.room, { participants: true })
     })
 
     on('chat:typing', () => {
@@ -258,6 +264,48 @@ export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: Re
       const emoji = parseReaction(raw)
       if (!c || !emoji || !c.room.settings.allowReactions || !allow('reaction')) return
       io.to(c.room.code).emit('reaction', { participantId: c.pid, emoji, at: Date.now() })
+    })
+
+    // ---- people: your own profile, and the host's tools ----
+
+    on('profile:update', (raw, reply) => {
+      const done = replyFn(reply)
+      const c = ctx()
+      const profile = parseProfile(raw)
+      if (!c || !profile) return done({ ok: false, error: 'Please choose a display name and avatar.' })
+      if (!allow('people')) return done({ ok: false, error: 'Slow down a little and try again.' })
+      if (updateProfile(c.room, c.pid, profile)) patch(c.room, { participants: true })
+      done({ ok: true })
+    })
+
+    on('participant:host', (raw, reply) => {
+      const done = replyFn(reply)
+      const c = ctx()
+      if (!c || typeof raw !== 'string') return done({ ok: false, error: GENERIC_ERROR })
+      if (!allow('people')) return done({ ok: false, error: 'Slow down a little and try again.' })
+      const r = makeHost(c.room, c.pid, raw)
+      if (r.ok) patch(c.room, { meta: true })
+      done(r.ok ? { ok: true } : r)
+    })
+
+    on('participant:remove', (raw, reply) => {
+      const done = replyFn(reply)
+      const c = ctx()
+      if (!c || typeof raw !== 'string') return done({ ok: false, error: GENERIC_ERROR })
+      if (!allow('people')) return done({ ok: false, error: 'Slow down a little and try again.' })
+      const gone = c.room.participants.find(p => p.id === raw)
+      const r = kick(c.room, c.pid, raw)
+      if (!r.ok) return done(r)
+      for (const s of io.sockets.sockets.values()) {
+        if (s.data.pid !== raw || s.data.code !== c.room.code) continue
+        s.emit('room:removed')
+        s.leave(c.room.code)
+        s.data = {}
+      }
+      clearTimeout(leaveTimers.get(`${c.room.code}:${raw}`))
+      if (gone) io.to(c.room.code).emit('presence:left', gone)
+      patch(c.room, { participants: true, shares: true })
+      done({ ok: true })
     })
 
     // ---- peer-to-peer sharing of attested tracks: only metadata and the WebRTC handshake pass here ----

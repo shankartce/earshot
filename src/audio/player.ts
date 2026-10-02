@@ -7,7 +7,7 @@ import { positionAt } from '../../shared/playback.ts'
 import type { Readiness } from '../../shared/types.ts'
 import { artUrls, getFile, resolveLocal } from '../library/library.ts'
 import { clock, socket } from '../realtime/socket.ts'
-import { canControl, connection, currentItem, me, playback, room, roomCode, toast } from '../state/room.ts'
+import { canControl, connection, currentItem, me, optimisticPlaying, playback, room, roomCode, shownPlaying, toast, togglePlay } from '../state/room.ts'
 import { DEFAULT_DRIFT, decide, learnSeekLead, migratePrefs, type DriftConfig } from '../sync/drift.ts'
 
 // ---- tunables (persisted; editable in /settings) ----
@@ -87,7 +87,7 @@ const failedKeys = new Set<string>() // local files this browser couldn't decode
 const pauseAudio = () => { if (!audio.paused) audio.pause() }
 audio.addEventListener('pause', () => {
   if (audio.ended || !loadedId || audio.src !== objectUrl) return
-  if (room.value?.playback.isPlaying && readiness.value === 'ready') {
+  if (shownPlaying.value && readiness.value === 'ready') { // (a pause you just tapped isn't "outside")
     heldHere.value = true
     readiness.value = 'needs-tap'
   }
@@ -244,7 +244,7 @@ export async function apply() {
   }
 
   const pb = r.playback
-  if (!pb.isPlaying) {
+  if (!pb.isPlaying || optimisticPlaying.value === false) {
     pauseAudio()
     audio.playbackRate = 1
     if (Math.abs(audio.currentTime - pb.position) > 0.05) seekTo(pb.position)
@@ -280,6 +280,13 @@ const applyKey = computed(() => {
 })
 effect(() => { applyKey.value; apply() })
 
+// A tapped pause silences this device at once; when the room answers (or refuses), reconcile.
+effect(() => {
+  const o = optimisticPlaying.value
+  if (o === false) pauseAudio()
+  else if (o === null) apply()
+})
+
 // Leaving or switching rooms clears anything that was specific to the old one.
 effect(() => {
   roomCode.value
@@ -290,7 +297,7 @@ effect(() => {
 // Drift correction loop: compare, then change speed slightly or (rarely) jump.
 function check() {
   const r = room.value
-  if (!r?.playback.isPlaying || readiness.value !== 'ready' || !loadedId) {
+  if (!r?.playback.isPlaying || optimisticPlaying.value === false || readiness.value !== 'ready' || !loadedId) {
     catchingUp.value = false
     return
   }
@@ -365,8 +372,8 @@ if ('mediaSession' in navigator) {
 
   effect(() => {
     if (canControl.value) {
-      set('play', () => { if (heldHere.value || readiness.value === 'needs-tap') tuneIn(); playback({ type: 'PLAY' }) })
-      set('pause', () => playback({ type: 'PAUSE' }))
+      set('play', () => { if (heldHere.value || readiness.value === 'needs-tap') tuneIn(); if (!shownPlaying.value) togglePlay() })
+      set('pause', () => { if (shownPlaying.value) togglePlay() })
       set('nexttrack', () => playback({ type: 'NEXT' }))
       set('previoustrack', () => playback({ type: 'PREVIOUS' }))
       set('seekto', d => { if (d.seekTime != null) playback({ type: 'SEEK', position: d.seekTime }) })
@@ -385,7 +392,7 @@ if ('mediaSession' in navigator) {
     const local = t ? resolveLocal(t) : null
     const art = local?.status === 'ready' ? artUrls.value.get(local.local.id) : undefined
     ms.metadata = t ? new MediaMetadata({ title: t.title, artist: t.artist, album: t.album, artwork: art ? [{ src: art, sizes: '320x320', type: 'image/jpeg' }] : [] }) : null
-    ms.playbackState = room.value?.playback.isPlaying && !mutedHere.value ? 'playing' : 'paused'
+    ms.playbackState = shownPlaying.value && !mutedHere.value ? 'playing' : 'paused'
   })
 
   // Position on the lock screen: refresh on every playback change and every 5 s while playing.

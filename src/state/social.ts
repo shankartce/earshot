@@ -1,5 +1,6 @@
 // Chat, typing, unread counts and floating reactions — the "room feels alive" layer.
 import { computed, effect, signal } from '@preact/signals'
+import type { ChatMessage } from '../../shared/types.ts'
 import { socket } from '../realtime/socket.ts'
 import { currentItem, me, participantById, room, roomCode, toast } from './room.ts'
 
@@ -8,16 +9,20 @@ import { currentItem, me, participantById, room, roomCode, toast } from './room.
 export const pending = signal<{ key: number; text: string }[]>([]) // sent, not yet echoed back
 /** What you're typing survives switching between the Queue and Chat tabs. */
 export const draft = signal('')
+/** The message you're answering (swipe a message, or Reply in its menu). */
+export const replyingTo = signal<ChatMessage | null>(null)
 let pendingKey = 0
 
 export async function sendChat(text: string): Promise<boolean> {
   const clean = text.trim()
   if (!clean) return false
   const key = ++pendingKey
+  const replyTo = replyingTo.value?.id
+  replyingTo.value = null
   pending.value = [...pending.value, { key, text: clean }]
   const r = await new Promise<{ ok: boolean; error?: string }>(resolve => {
     if (!socket.connected) return resolve({ ok: false, error: 'Connection lost — reconnecting…' })
-    socket.timeout(8000).emit('chat:send', clean, (err, res) => resolve(err ? { ok: false, error: 'Message not sent. Please try again.' } : res))
+    socket.timeout(8000).emit('chat:send', replyTo ? { text: clean, replyTo } : clean, (err, res) => resolve(err ? { ok: false, error: 'Message not sent. Please try again.' } : res))
   })
   pending.value = pending.value.filter(p => p.key !== key)
   if (!r.ok) toast(r.error ?? 'Message not sent.', { tone: 'error' })
@@ -52,8 +57,18 @@ export const chatOpen = signal(false)
 export const unread = signal(0)
 const seen = () => chatOpen.value && document.visibilityState === 'visible'
 effect(() => { if (chatOpen.value) unread.value = 0 })
-effect(() => { roomCode.value; unread.value = 0 }) // a new room starts with no unread badge
-document.addEventListener('visibilitychange', () => { if (seen()) unread.value = 0 })
+effect(() => { roomCode.value; unread.value = 0; replyingTo.value = null }) // a new room starts fresh
+
+// "Seen": while the chat is on screen, tell the room the newest message you've seen (once each).
+let seenSent = ''
+const reportSeen = () => {
+  const last = room.value?.chat.at(-1)
+  if (!last || last.id === seenSent || !seen() || !socket.connected) return
+  seenSent = last.id
+  socket.emit('chat:seen', last.id)
+}
+effect(() => { room.value?.chat.length; chatOpen.value; reportSeen() })
+document.addEventListener('visibilitychange', () => { if (seen()) { unread.value = 0; reportSeen() } })
 
 // Unread count in the tab title so you notice from another tab.
 effect(() => {
@@ -64,11 +79,10 @@ effect(() => {
 
 // ---- floating reactions ----
 
-export interface Float { id: number; emoji: string; participantId: string; x: number }
+export interface Float { id: number; emoji: string; participantId: string; x: number; sway: number; dur: number }
 export const floats = signal<Float[]>([])
-export const lastReaction = signal<{ id: number; text: string } | null>(null)
 let floatId = 0
-const MAX_FLOATS = 12
+const MAX_FLOATS = 24
 
 export const sendReaction = (emoji: string) => socket.emit('reaction:send', emoji)
 
@@ -113,13 +127,12 @@ socket.on('chat:message', m => {
 
 socket.on('reaction', ({ participantId, emoji }) => {
   const id = ++floatId
-  floats.value = [...floats.value.slice(-(MAX_FLOATS - 1)), { id, emoji, participantId, x: 15 + Math.random() * 70 }]
-  setTimeout(() => { floats.value = floats.value.filter(f => f.id !== id) }, 2800)
+  const dur = 3600 + Math.random() * 1400
+  const sway = (Math.random() < 0.5 ? -1 : 1) * (10 + Math.random() * 18)
+  floats.value = [...floats.value.slice(-(MAX_FLOATS - 1)), { id, emoji, participantId, x: 6 + Math.random() * 80, sway, dur }]
+  setTimeout(() => { floats.value = floats.value.filter(f => f.id !== id) }, dur + 100)
   const who = participantId === me.value ? 'You' : participantById(participantId)?.displayName ?? 'Someone'
-  const text = `${who} reacted ${emoji}`
-  lastReaction.value = { id, text }
-  setTimeout(() => { if (lastReaction.value?.id === id) lastReaction.value = null }, 3000)
-  if (participantId !== me.value) announce(text)
+  if (participantId !== me.value) announce(`${who} reacted ${emoji}`)
 })
 
 // Tell screen-reader users when the song changes (the stage heading updates silently otherwise).

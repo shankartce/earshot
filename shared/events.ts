@@ -67,10 +67,14 @@ export interface ClientToServer {
   'playback:command': (cmd: PlaybackCommand, reply: (r: Ack) => void) => void
   'queue:command': (cmd: QueueCommand, reply: (r: Ack) => void) => void
   'status:update': (p: { readiness: Readiness; isAway: boolean }) => void
-  'chat:send': (text: string, reply: (r: Ack) => void) => void
+  'chat:send': (p: string | { text: string; replyTo?: string }, reply: (r: Ack) => void) => void
+  'chat:seen': (messageId: string) => void
   'chat:typing': () => void
   'chat:react': (p: { messageId: string; emoji: string }) => void
   'reaction:send': (emoji: string) => void
+  'profile:update': (profile: Profile, reply: (r: Ack) => void) => void
+  'participant:host': (participantId: string, reply: (r: Ack) => void) => void
+  'participant:remove': (participantId: string, reply: (r: Ack) => void) => void
   'share:offer': (p: { trackId: string; license: License }) => void
   'share:withdraw': (trackId: string) => void
   'rtc:signal': (p: { to: string; data: Signal }) => void
@@ -86,4 +90,5 @@ export interface ServerToClient {
   'chat:typing': (participantId: string) => void
   'reaction': (p: { participantId: string; emoji: string; at: number }) => void
   'rtc:signal': (p: { from: string; data: Signal }) => void
+  'room:removed': () => void // the host removed you; your token no longer works
 }

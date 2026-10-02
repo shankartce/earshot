@@ -38,6 +38,8 @@ const paths = {
   download: <><path d="M12 4v11" /><path d="m7.5 10.5 4.5 4.5 4.5-4.5" /><path d="M5 19.5h14" /></>,
   home: <><path d="M4 11 12 4.5 20 11" /><path d="M6.5 9.5V19h11V9.5" /></>,
   arrowLeft: <><path d="M19 12H5" /><path d="m11 6-6 6 6 6" /></>,
+  reply: <><path d="M9.5 6.5 4 12l5.5 5.5" /><path d="M4.5 12H14a6 6 0 0 1 6 6v.5" /></>,
+  smile: <><circle cx="12" cy="12" r="8.5" /><path d="M8.5 14a4.2 4.2 0 0 0 7 0" /><circle cx="9.2" cy="9.8" r="1" fill="currentColor" stroke="none" /><circle cx="14.8" cy="9.8" r="1" fill="currentColor" stroke="none" /></>,
 } satisfies Record<string, JSX.Element>
 
 export type IconName = keyof typeof paths

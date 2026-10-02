@@ -1,7 +1,7 @@
 // Payload validators for the trust boundary. Each returns a clean value or null — never throws.
 import type { PlaybackCommand, QueueCommand, Signal } from './events.ts'
 import type { License, Profile, Readiness, RoomSettings, Track } from './types.ts'
-import { LICENSES, REACTIONS } from './types.ts'
+import { LICENSES } from './types.ts'
 
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 export const CODE_LENGTH = 5
@@ -134,5 +134,17 @@ export function parseSignal(x: unknown): Signal | null {
 export const parseReadiness = (x: unknown): Readiness | null =>
   READINESS.includes(x as Readiness) ? (x as Readiness) : null
 
+// One emoji: pictographs plus the joiners/modifiers/flags that build them. No letters, markup or text.
+const EMOJI_RE = /^(?:\p{Extended_Pictographic}|\p{Emoji_Component})+$/u // components include ZWJ, VS16, skin tones, flags
+const PICTO_RE = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u
+
+/** Any single emoji (👍🏽, ❤️‍🔥, 🇮🇳 …), up to 16 UTF-16 units. Keycaps and bare digits/#/* are refused. */
 export const parseReaction = (x: unknown): string | null =>
-  (REACTIONS as readonly unknown[]).includes(x) ? (x as string) : null
+  typeof x === 'string' && x.length <= 16 && EMOJI_RE.test(x) && PICTO_RE.test(x) && !/[#*0-9]/.test(x) ? x : null
+
+/** chat:send payload: the original bare string, or `{ text, replyTo }`. */
+export function parseChatSend(x: unknown): { text: string; replyTo?: string } | null {
+  if (typeof x === 'string') return { text: cleanText(x, 500, true) }
+  if (!isObj(x)) return null
+  return { text: cleanText(x.text, 500, true), ...(isId(x.replyTo) ? { replyTo: x.replyTo } : {}) }
+}
