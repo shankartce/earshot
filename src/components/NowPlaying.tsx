@@ -2,11 +2,12 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { heldHere, isIOS, mutedHere, prefs, readiness, roomPosition, setPrefs, syncStatus, tuneIn, unlockAudio, unplayable } from '../audio/player.ts'
 import { vizStyle } from '../audio/visualizer.ts'
-import { stageView } from '../state/ui.ts'
+import { mobileTab, stageView, transition } from '../state/ui.ts'
 import { LICENSES, type ShareOffer, type Track } from '../../shared/types.ts'
 import { autoFetch, bestOffer, isActive, offersFor, receiving, requestCopy } from '../share/p2p.ts'
 import { Lyrics } from './Lyrics.tsx'
-import { StageTools, Visualizer } from './Visualizer.tsx'
+import { CoverTools, RingVisualizer } from './Visualizer.tsx'
+import { songHues } from '../state/theme.ts'
 import { artUrls, confirmMatch, importFiles, rejectMatch, resolveLocal } from '../library/library.ts'
 import { reportImport } from '../state/actions.ts'
 import { canControl, currentItem, mayControl, optimisticPlaying, participantById, playback, room, shownPlaying, toast, togglePlay } from '../state/room.ts'
@@ -30,17 +31,17 @@ export function NowPlaying() {
     <section class={`stage${playing ? ' is-playing' : ''} viz-${vizStyle.value}${showLyrics ? ' with-lyrics' : ''}`} aria-label="Now playing">
       {showLyrics ? (
         <div class="lyrics-wrap">
+          <CoverTools hasTrack={!!t} />
           <Lyrics track={t} />
         </div>
       ) : (
         <div class="art-wrap" ref={swipe}>
-          <Visualizer placement="ring" />
+          {vizStyle.value === 'radial' && <RingVisualizer key={songHues.value.join()} />}
           <div class="vinyl" aria-hidden="true" />
           <Cover id={t?.id} art={art} class="art" key={t?.id} />
+          <CoverTools hasTrack={!!t} />
         </div>
       )}
-      {!showLyrics && <Visualizer placement="strip" />}
-      <StageTools hasTrack={!!t} />
 
       <div class="np-meta">
         <p class="eyebrow np-state">
@@ -57,6 +58,7 @@ export function NowPlaying() {
       {item && <Progress />}
       {syncStatus.value === 'catching-up' && readiness.value === 'ready' && <CatchingUp />}
       <Controls />
+      <UpNext />
       <ReactionBar />
       {!isIOS && <Volume />}
     </section>
@@ -247,7 +249,7 @@ function useSwipe(remountKey: unknown) {
     let swiping = false
     const set = (dx: number) => el.style.setProperty('--swipe', `${dx}px`)
     const down = (e: PointerEvent) => {
-      if (!e.isPrimary || e.button !== 0) return
+      if (!e.isPrimary || e.button !== 0 || (e.target as HTMLElement).closest('button')) return
       start = { x: e.clientX, y: e.clientY, id: e.pointerId }
       swiping = false
     }
@@ -286,6 +288,27 @@ function useSwipe(remountKey: unknown) {
     }
   }, [remountKey])
   return ref
+}
+
+/** "Up next · Title — Artist": a peek at the queue; tapping opens it. */
+function UpNext() {
+  const r = room.value!
+  const i = r.queue.items.findIndex(x => x.id === r.playback.itemId)
+  const next = i > -1 ? r.queue.items[i + 1] : undefined
+  if (!next) return null
+  const open = () => {
+    if (matchMedia('(max-width: 999px)').matches) return transition(() => { mobileTab.value = 'queue' })
+    const q = document.querySelector<HTMLElement>('.queue')
+    q?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    q?.querySelector<HTMLElement>('button, [tabindex="0"]')?.focus({ preventScroll: true })
+  }
+  return (
+    <button class="up-next" onClick={open} aria-label={`Up next: ${next.track.title}. Open the queue`}>
+      <span class="up-next-label">Up next</span>
+      <span class="up-next-title">{next.track.title}{next.track.artist ? ` — ${next.track.artist}` : ''}</span>
+      <Icon name="list" size={15} />
+    </button>
+  )
 }
 
 function Volume() {

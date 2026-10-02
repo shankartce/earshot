@@ -7,7 +7,9 @@ import { parseCode } from '../../shared/validate.ts'
 import { driftMs, readiness, roomPosition, tuneIn, unlockAudio } from '../audio/player.ts'
 import { Icon } from '../components/icons.tsx'
 import { NowPlaying } from '../components/NowPlaying.tsx'
-import { Participants, ProfileSheet } from '../components/Participants.tsx'
+import { openProfile, Participants, ProfileSheet } from '../components/Participants.tsx'
+import { Ambient } from '../components/Visualizer.tsx'
+import { vizStyle } from '../audio/visualizer.ts'
 import { ProfileFields } from '../components/ProfileForm.tsx'
 import { Chat } from '../components/Chat.tsx'
 import { FloatingReactions } from '../components/Reactions.tsx'
@@ -17,11 +19,11 @@ import { Queue } from '../components/Queue.tsx'
 import { unread } from '../state/social.ts'
 import { tabKeys, useMedia } from '../utils/media.ts'
 import { copyText, inviteLink, SettingsSheet, ShareSheet } from '../components/RoomSheets.tsx'
-import { Avatar, ConnectionPill, Empty } from '../components/ui.tsx'
+import { Avatar, ConnectionPill, Empty, Sheet } from '../components/ui.tsx'
 import { clock } from '../realtime/socket.ts'
 import { profile, randomAvatar, saveProfile, tokenFor } from '../state/profile.ts'
-import { canControl, connection, currentItem, joinRoom, leaveRoom, peekRoom, playback, room, togglePlay } from '../state/room.ts'
-import { hues } from '../utils/format.ts'
+import { canControl, connection, joinRoom, leaveRoom, me, peekRoom, playback, room, togglePlay } from '../state/room.ts'
+import { songHues } from '../state/theme.ts' // the room's colours follow the current song
 
 const GONE = "That room isn't available."
 
@@ -137,7 +139,7 @@ function RoomView() {
   const { route } = useLocation()
   const [share, setShare] = useState(false)
   const [settings, setSettings] = useState(false)
-  const [h1, h2] = hues(currentItem.value?.track.id)
+  const [menu, setMenu] = useState(false)
   const debug = new URLSearchParams(location.search).has('debug')
   const online = r.participants.filter(p => p.isOnline)
   const wide = useMedia('(min-width: 1360px)')
@@ -154,9 +156,22 @@ function RoomView() {
   }, [])
 
   return (
-    <div class={`room${r.playback.isPlaying ? ' playing' : ''}`} style={{ '--h1': h1, '--h2': h2 }}>
-      <div class="room-glow" aria-hidden="true" />
+    <div class={`room${r.playback.isPlaying ? ' playing' : ''}`}>
+      {vizStyle.value === 'ambient' ? <Ambient key={songHues.value.join()} /> : <div class="room-glow" aria-hidden="true" />}
       <FloatingReactions />
+      {mobile ? (
+        <header class="room-head compact" ref={headRef}>
+          <div class="room-title">
+            <span class="room-emoji" aria-hidden="true">{r.emoji}</span>
+            <h1 class="room-name">{r.name}</h1>
+            <ConnectionPill compact />
+          </div>
+          <div class="room-actions">
+            <button class="icon-btn invite-btn" onClick={() => setShare(true)} aria-label="Invite friends"><Icon name="share" size={19} /></button>
+            <button class="icon-btn" onClick={() => setMenu(true)} aria-label="Room menu" aria-haspopup="dialog"><Icon name="more" /></button>
+          </div>
+        </header>
+      ) : (
       <header class="room-head" ref={headRef}>
         <div class="room-title">
           <span class="room-emoji" aria-hidden="true">{r.emoji}</span>
@@ -177,6 +192,7 @@ function RoomView() {
           <button class="icon-btn" onClick={() => { leaveRoom(); route('/') }} aria-label="Leave room"><Icon name="leave" /></button>
         </div>
       </header>
+      )}
 
       {connection.value !== 'online' && <p class="conn-banner" role="status">Connection lost — reconnecting…</p>}
 
@@ -200,6 +216,16 @@ function RoomView() {
       <ShareSheet open={share} onClose={() => setShare(false)} />
       <SettingsSheet open={settings} onClose={() => setSettings(false)} />
       <ProfileSheet />
+      <Sheet open={menu} onClose={() => setMenu(false)} title={`${r.emoji} ${r.name}`}>
+        <div class="menu-list">
+          <button class="menu-item" onClick={() => { copyText(inviteLink(r.code), 'Invite link copied'); setMenu(false) }}>
+            <Icon name="link" /> Copy invite link <span class="menu-hint mono">{r.code}</span>
+          </button>
+          <button class="menu-item" onClick={() => { setMenu(false); openProfile(me.value) }}><Icon name="users" /> Your profile</button>
+          <button class="menu-item" onClick={() => { setMenu(false); setSettings(true) }}><Icon name="settings" /> Room settings</button>
+          <button class="menu-item danger" onClick={() => { setMenu(false); leaveRoom(); route('/') }}><Icon name="leave" /> Leave room</button>
+        </div>
+      </Sheet>
       {debug && (
         <pre class="debug" aria-hidden="true">
           {`offset ${clock.offset.toFixed(1)}ms  rtt ${clock.rtt.toFixed(1)}ms\n`}

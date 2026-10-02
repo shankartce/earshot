@@ -1,11 +1,14 @@
 // Visualizer drawing. Audio analysis happens only in this browser (AnalyserNode); nothing is sent anywhere.
 import { signal } from '@preact/signals'
 
-export type VizStyle = 'off' | 'bars' | 'wave' | 'radial' | 'glow'
-export const VIZ_LABELS: Record<VizStyle, string> = { off: 'Off', bars: 'Bars', wave: 'Waveform', radial: 'Ring', glow: 'Glow' }
+export type VizStyle = 'ambient' | 'radial' | 'off'
+export const VIZ_LABELS: Record<VizStyle, string> = { ambient: 'Ambient', radial: 'Ring', off: 'Off' }
 
-const saved = (() => { try { return localStorage.getItem('jam:viz') as VizStyle | null } catch { return null } })()
-export const vizStyle = signal<VizStyle>(saved && saved in VIZ_LABELS ? saved : 'radial')
+/** Older saved styles (bars, waveform, glow) became Ambient; anything unknown does too. */
+export const normalizeViz = (x: unknown): VizStyle => (x === 'radial' || x === 'off' ? x : 'ambient')
+
+const saved = (() => { try { return localStorage.getItem('jam:viz') } catch { return null } })()
+export const vizStyle = signal<VizStyle>(normalizeViz(saved))
 export function setVizStyle(v: VizStyle) {
   vizStyle.value = v
   try { localStorage.setItem('jam:viz', v) } catch { /* ignore */ }
@@ -44,54 +47,26 @@ export function bands(freq: Uint8Array, count: number): number[] {
   return out
 }
 
-export const energy = (freq: Uint8Array) => bands(freq, 8).slice(0, 3).reduce((a, b) => a + b, 0) / 3
 
-function gradient(g: CanvasRenderingContext2D, w: number, h: number) {
+/** A gradient in the song's colours. */
+function gradient(g: CanvasRenderingContext2D, w: number, h: number, [h1, h2]: [number, number]) {
   const grad = g.createLinearGradient(0, h, w, 0)
-  grad.addColorStop(0, '#ffb454')
-  grad.addColorStop(0.5, '#ff7a59')
-  grad.addColorStop(1, '#f25f8e')
+  grad.addColorStop(0, `hsl(${h1 + 28} 90% 66%)`)
+  grad.addColorStop(0.5, `hsl(${h1} 85% 64%)`)
+  grad.addColorStop(1, `hsl(${h2} 80% 64%)`)
   return grad
 }
 
-export function drawBars(g: CanvasRenderingContext2D, w: number, h: number, f: Frame) {
-  const n = 40
-  const lv = bands(f.freq, n)
-  const gap = w / n
-  const bw = gap * 0.58
-  g.fillStyle = gradient(g, w, h)
-  lv.forEach((v, i) => {
-    const bh = Math.max(3, v * h * 0.95)
-    g.beginPath()
-    g.roundRect(i * gap + (gap - bw) / 2, h - bh, bw, bh, bw / 2)
-    g.fill()
-  })
-}
-
-export function drawWave(g: CanvasRenderingContext2D, w: number, h: number, f: Frame) {
-  g.lineWidth = Math.max(2, h / 22)
-  g.lineCap = 'round'
-  g.strokeStyle = gradient(g, w, h)
-  g.beginPath()
-  const n = f.wave.length
-  for (let i = 0; i < n; i++) {
-    const x = (i / (n - 1)) * w
-    const y = h / 2 + ((f.wave[i] - 128) / 128) * h * 0.9
-    i ? g.lineTo(x, y) : g.moveTo(x, y)
-  }
-  g.stroke()
-}
-
 /** Bars radiating from a ring just outside the artwork. */
-export function drawRing(g: CanvasRenderingContext2D, w: number, h: number, f: Frame, inner: number) {
+export function drawRing(g: CanvasRenderingContext2D, w: number, h: number, f: Frame, inner: number, hues: [number, number]) {
   const n = 72
   const lv = bands(f.freq, n / 2)
   const cx = w / 2
   const cy = h / 2
   const room = Math.min(w, h) / 2 - inner
   g.lineCap = 'round'
-  g.lineWidth = Math.max(2, (2 * Math.PI * inner) / n * 0.42)
-  g.strokeStyle = gradient(g, w, h)
+  g.lineWidth = Math.max(1.5, (2 * Math.PI * inner) / n * 0.3)
+  g.strokeStyle = gradient(g, w, h, hues)
   for (let i = 0; i < n; i++) {
     const v = lv[i < n / 2 ? i : n - 1 - i] // mirror so the ring is symmetric
     const a = (i / n) * Math.PI * 2 - Math.PI / 2
@@ -103,4 +78,26 @@ export function drawRing(g: CanvasRenderingContext2D, w: number, h: number, f: F
     g.stroke()
   }
   g.globalAlpha = 1
+}
+
+/**
+ * Ambient: three big soft blobs in the song's colours that drift slowly and swell with the music.
+ * Drawn on a tiny canvas that CSS scales up to the whole screen, which blurs it for free.
+ */
+export function drawAmbient(g: CanvasRenderingContext2D, w: number, h: number, f: Frame, t: number, [h1, h2]: [number, number]) {
+  const lv = bands(f.freq, 8)
+  const avg = (from: number, to: number) => lv.slice(from, to).reduce((a, x) => a + x, 0) / (to - from)
+  const [bass, mid, high] = [avg(0, 2), avg(2, 5), avg(5, 8)]
+  g.clearRect(0, 0, w, h)
+  const m = Math.max(w, h)
+  const blob = (x: number, y: number, r: number, hue: number, alpha: number) => {
+    const grad = g.createRadialGradient(x, y, 0, x, y, r)
+    grad.addColorStop(0, `hsl(${hue} 80% 55% / ${alpha})`)
+    grad.addColorStop(1, `hsl(${hue} 80% 55% / 0)`)
+    g.fillStyle = grad
+    g.fillRect(0, 0, w, h)
+  }
+  blob(w * (0.22 + 0.06 * Math.sin(t * 0.13)), h * (0.18 + 0.05 * Math.cos(t * 0.11)), m * (0.55 + bass * 0.35), h1, 0.34 + bass * 0.36)
+  blob(w * (0.82 + 0.05 * Math.cos(t * 0.09)), h * (0.78 + 0.06 * Math.sin(t * 0.12)), m * (0.5 + mid * 0.3), h2, 0.28 + mid * 0.3)
+  blob(w * (0.6 + 0.1 * Math.sin(t * 0.07)), h * (0.42 + 0.08 * Math.cos(t * 0.08)), m * (0.32 + high * 0.25), (h1 + h2) / 2, 0.12 + high * 0.25)
 }

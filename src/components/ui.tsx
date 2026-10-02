@@ -84,8 +84,12 @@ const PILL = {
 }
 
 // Not a live region: sync can flicker on every correction; real disconnects have their own banner.
-export function ConnectionPill() {
+/** `compact`: just a dot while all is well; the words appear only when something needs attention. */
+export function ConnectionPill({ compact }: { compact?: boolean }) {
   const s = PILL[syncStatus.value]
+  if (compact && syncStatus.value === 'synced') {
+    return <span class="sync-dot" title={s.hint} role="img" aria-label={`Sync: ${s.label}. ${s.hint}`} />
+  }
   return (
     <span class={`pill conn ${s.cls}`} title={s.hint} aria-label={`Sync: ${s.label}. ${s.hint}`}>
       <span class="dot" aria-hidden="true" />{s.label}

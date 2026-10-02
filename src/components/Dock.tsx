@@ -1,6 +1,6 @@
 // Bottom dock: a persistent mini-player (whenever the full player isn't on screen) and, on phones,
 // the Room / Queue / Chat / Library tabs. Lives at app level so music keeps going as you browse.
-import { useEffect } from 'preact/hooks'
+import { useEffect, useRef } from 'preact/hooks'
 import { useLocation } from 'preact-iso'
 import { heldHere, readiness, roomPosition, tuneIn, unlockAudio } from '../audio/player.ts'
 import { artUrls, resolveLocal } from '../library/library.ts'
@@ -22,28 +22,48 @@ export function Dock() {
   const onRoomPage = !!r && path === roomPath
   const showMini = !!r && (!onRoomPage || (mobile && mobileTab.value !== 'room'))
   const showNav = !!r && mobile && (onRoomPage || path === '/library')
+  const visible = showMini || showNav
 
+  // Everything that must stay clear of the dock (page bottom, toasts, chat, reactions) reads its
+  // real height from --dock-h, so nothing hides behind it whatever it currently contains.
+  const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    document.body.dataset.dock = showMini && showNav ? 'both' : showMini ? 'mini' : showNav ? 'nav' : ''
-  }, [showMini, showNav])
+    const card = ref.current?.firstElementChild as HTMLElement | null
+    const root = document.documentElement
+    if (!card) return
+    const ro = new ResizeObserver(() => {
+      root.style.setProperty('--dock-h', `${card.offsetHeight + 8}px`)
+      document.body.style.paddingBottom = `calc(${card.offsetHeight + 16}px + var(--safe-bottom))`
+    })
+    ro.observe(card)
+    return () => {
+      ro.disconnect()
+      root.style.removeProperty('--dock-h')
+      document.body.style.paddingBottom = ''
+    }
+  }, [visible])
 
-  if (!r) return null
+  if (!r || !visible) return null
   const go = (tab: typeof mobileTab.value) => transition(() => {
     mobileTab.value = tab
     if (!onRoomPage) route(roomPath)
   })
+  const active = path === '/library' ? 3 : onRoomPage ? ['room', 'queue', 'chat'].indexOf(mobileTab.value) : -1
 
   return (
-    <div class="dock">
-      {showMini && <MiniPlayer onOpen={() => go('room')} />}
-      {showNav && (
-        <nav class="bottom-nav" aria-label="Room sections">
-          <NavItem icon="home" label="Room" active={onRoomPage && mobileTab.value === 'room'} onClick={() => go('room')} />
-          <NavItem icon="list" label="Queue" active={onRoomPage && mobileTab.value === 'queue'} onClick={() => go('queue')} count={shownQueue.value.items.length} />
-          <NavItem icon="chat" label="Chat" active={onRoomPage && mobileTab.value === 'chat'} onClick={() => go('chat')} badge={unread.value} />
-          <NavItem icon="music" label="Library" active={path === '/library'} onClick={() => transition(() => route('/library'))} />
-        </nav>
-      )}
+    <div class="dock" ref={ref}>
+      <div class="dock-card">
+        {showMini && <MiniPlayer onOpen={() => go('room')} />}
+        {showNav && (
+          <nav class="bottom-nav" aria-label="Room sections" style={{ '--i': active }}>
+            {active > -1 && <span class="nav-pill" aria-hidden="true" />}
+            <NavItem icon="home" label="Room" active={active === 0} onClick={() => go('room')} />
+            <NavItem icon="list" label="Queue" active={active === 1} onClick={() => go('queue')} count={shownQueue.value.items.length} />
+            <NavItem icon="chat" label="Chat" active={active === 2} onClick={() => go('chat')} badge={unread.value} />
+            <NavItem icon="music" label="Library" active={active === 3} onClick={() => transition(() => route('/library'))} />
+          </nav>
+        )}
+      </div>
     </div>
   )
 }
@@ -56,7 +76,7 @@ function NavItem({ icon, label, active, onClick, badge, count }: {
       aria-label={badge ? `${label}, ${badge} unread` : label}>
       <span class="nav-icon">
         <Icon name={icon} size={22} />
-        {!!badge && <span class="badge">{badge}</span>}
+        {!!badge && <span class="badge" key={badge}>{badge}</span>}
         {!badge && !!count && <span class="nav-count">{count}</span>}
       </span>
       <span class="nav-label">{label}</span>

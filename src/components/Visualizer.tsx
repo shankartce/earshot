@@ -1,10 +1,10 @@
-// Canvas visualizer + the small stage toolbar (visualizer style, lyrics toggle).
-import { useEffect, useRef } from 'preact/hooks'
+// Music visuals: Ambient (a soft full-screen colour wash behind everything) or a Ring hugging the
+// cover, plus the small tools on the cover's corner (lyrics, visual style).
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { enableAnalyser, getAnalyser, readiness } from '../audio/player.ts'
-import {
-  drawBars, drawRing, drawWave, energy, idleFrame, setVizStyle, VIZ_LABELS, vizStyle, type Frame, type VizStyle,
-} from '../audio/visualizer.ts'
-import { room } from '../state/room.ts'
+import { drawAmbient, drawRing, idleFrame, setVizStyle, VIZ_LABELS, vizStyle, type Frame, type VizStyle } from '../audio/visualizer.ts'
+import { room, shownPlaying } from '../state/room.ts'
+import { songHues } from '../state/theme.ts'
 import { stageView } from '../state/ui.ts'
 import { Icon } from './icons.tsx'
 
@@ -15,85 +15,106 @@ const kick = () => { if (vizStyle.value !== 'off' && room.value) enableAnalyser(
 document.addEventListener('pointerdown', kick, true)
 document.addEventListener('keydown', kick, true)
 
-/** placement "ring" draws around the artwork (Ring / Glow); "strip" draws under it (Bars / Waveform). */
-export function Visualizer({ placement }: { placement: 'ring' | 'strip' }) {
-  const style = vizStyle.value
-  const active = placement === 'ring' ? style === 'radial' || style === 'glow' : style === 'bars' || style === 'wave'
-  const ref = useRef<HTMLCanvasElement>(null)
+const freq = new Uint8Array(512)
+const wave = new Uint8Array(512)
+/** This frame's levels: the real analyser when we have one, else a gentle stand-in. */
+function frameAt(t: number): Frame {
+  const playing = shownPlaying.value
+  const an = playing && readiness.value === 'ready' ? getAnalyser() : null
+  if (!an) return idleFrame(t / 1000, playing)
+  an.getByteFrequencyData(freq)
+  an.getByteTimeDomainData(wave)
+  return { freq, wave }
+}
 
+/**
+ * Draw into a canvas every frame while it's on screen (at most `fps`), sized to its box × `scale`.
+ * Reduced motion: one still frame, redrawn on resize.
+ */
+function useCanvas(draw: (g: CanvasRenderingContext2D, w: number, h: number, t: number) => void, { scale = 1, fps = 60 } = {}) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const drawRef = useRef(draw)
+  drawRef.current = draw
   useEffect(() => {
     const canvas = ref.current
-    if (!active || !canvas) return
+    if (!canvas) return
     const g = canvas.getContext('2d')!
-    const host = canvas.parentElement!
-    const freq = new Uint8Array(512)
-    const wave = new Uint8Array(512)
-    let raf = 0
-
     const still = reducedMotion()
+    let raf = 0
+    let last = 0
+    const paint = (t: number) => drawRef.current(g, canvas.width, canvas.height, t)
     const fit = () => {
-      const dpr = Math.min(2, devicePixelRatio || 1)
-      canvas.width = Math.round(canvas.clientWidth * dpr) // resizing clears the canvas…
-      canvas.height = Math.round(canvas.clientHeight * dpr)
-      if (still) frame(0) // …so a reduced-motion still frame must be redrawn
+      const dpr = Math.min(2, devicePixelRatio || 1) * scale
+      canvas.width = Math.max(1, Math.round(canvas.clientWidth * dpr)) // resizing clears the canvas…
+      canvas.height = Math.max(1, Math.round(canvas.clientHeight * dpr))
+      if (still) paint(0) // …so a still frame must be redrawn
+    }
+    const loop = (t: number) => {
+      if (t - last >= 1000 / fps - 2) { last = t; paint(t) }
+      raf = requestAnimationFrame(loop)
     }
     const ro = new ResizeObserver(fit)
-
-    const frame = (t: number) => {
-      const playing = !!room.value?.playback.isPlaying
-      const an = playing && readiness.value === 'ready' ? getAnalyser() : null
-      let f: Frame
-      if (an) {
-        an.getByteFrequencyData(freq)
-        an.getByteTimeDomainData(wave)
-        f = { freq, wave }
-      } else f = idleFrame(t / 1000, playing)
-
-      const { width: w, height: h } = canvas
-      g.clearRect(0, 0, w, h)
-      if (style === 'bars') drawBars(g, w, h, f)
-      else if (style === 'wave') drawWave(g, w, h, f)
-      else if (style === 'radial') drawRing(g, w, h, f, Math.min(w, h) * 0.36)
-      if (style === 'glow') host.style.setProperty('--energy', energy(f.freq).toFixed(2)) // only Glow's CSS reads it
-    }
-
     ro.observe(canvas)
     fit()
-    // Draw only while on screen: a scrolled-away visualizer still repainting every frame makes phones stutter.
-    const loop = (t: number) => { frame(t); raf = requestAnimationFrame(loop) }
+    // Only animate while on screen: a hidden or scrolled-away canvas costs nothing.
     const io = new IntersectionObserver(([e]) => {
       cancelAnimationFrame(raf)
       if (e.isIntersecting && !still) raf = requestAnimationFrame(loop)
     })
     io.observe(canvas)
-    return () => {
-      cancelAnimationFrame(raf)
-      ro.disconnect()
-      io.disconnect()
-      host.style.removeProperty('--energy')
-    }
-  }, [active, style])
-
-  if (!active) return null
-  return <canvas ref={ref} class={`viz viz-${placement}`} aria-hidden="true" />
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); io.disconnect() }
+  }, [])
+  return ref
 }
 
-export function StageTools({ hasTrack }: { hasTrack: boolean }) {
+/** Bars radiating from just outside the cover, in the song's colours. */
+export function RingVisualizer() {
+  const ref = useCanvas((g, w, h, t) => {
+    g.clearRect(0, 0, w, h)
+    drawRing(g, w, h, frameAt(t), Math.min(w, h) * 0.385, songHues.value)
+  })
+  return <canvas ref={ref} class="viz viz-ring" aria-hidden="true" />
+}
+
+/** A soft, full-screen wash in the song's colours that swells with the music. */
+export function Ambient() {
+  const ref = useCanvas((g, w, h, t) => drawAmbient(g, w, h, frameAt(t), t / 1000, songHues.value), { scale: 1 / 8, fps: 30 })
+  return <canvas ref={ref} class="ambient" aria-hidden="true" />
+}
+
+/** Lyrics and visual-style buttons, pinned to the cover's (or the lyrics') top-right corner. */
+export function CoverTools({ hasTrack }: { hasTrack: boolean }) {
   const lyrics = stageView.value === 'lyrics'
+  const [menu, setMenu] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!menu) return
+    const off = (e: Event) => { if (!box.current?.contains(e.target as Node)) setMenu(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false) }
+    document.addEventListener('pointerdown', off, true)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('pointerdown', off, true); document.removeEventListener('keydown', esc) }
+  }, [menu])
   return (
-    <div class="stage-tools">
-      <label class="tool-select">
-        <Icon name="wave" size={16} />
-        <span class="sr-only">Visualizer</span>
-        <select value={vizStyle.value} aria-label="Visualizer style"
-          onChange={e => { setVizStyle(e.currentTarget.value as VizStyle); enableAnalyser() }}>
-          {(Object.keys(VIZ_LABELS) as VizStyle[]).map(k => <option key={k} value={k}>{VIZ_LABELS[k]}</option>)}
-        </select>
-      </label>
-      <button class={`tool-btn${lyrics ? ' on' : ''}`} aria-pressed={lyrics} disabled={!hasTrack}
+    <div class="cover-tools" ref={box}>
+      <button class={`cover-btn${lyrics ? ' on' : ''}`} aria-pressed={lyrics} disabled={!hasTrack} aria-label="Lyrics" title="Lyrics"
         onClick={() => { stageView.value = lyrics ? 'art' : 'lyrics' }}>
-        <Icon name="lyrics" size={16} /> Lyrics
+        <Icon name="lyrics" size={18} />
       </button>
+      <button class={`cover-btn${menu ? ' on' : ''}`} aria-haspopup="menu" aria-expanded={menu} aria-label={`Visuals: ${VIZ_LABELS[vizStyle.value]}`} title="Visuals"
+        onClick={() => setMenu(!menu)}>
+        <Icon name="wave" size={18} />
+      </button>
+      {menu && (
+        <div class="cover-menu" role="menu" aria-label="Visuals">
+          {(Object.keys(VIZ_LABELS) as VizStyle[]).map(k => (
+            <button key={k} role="menuitemradio" aria-checked={vizStyle.value === k} class={vizStyle.value === k ? 'on' : ''}
+              onClick={() => { setVizStyle(k); enableAnalyser(); setMenu(false) }}>
+              {VIZ_LABELS[k]} {vizStyle.value === k && <Icon name="check" size={16} />}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

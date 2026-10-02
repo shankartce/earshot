@@ -7,6 +7,8 @@ import { Clock, estimate, shouldAccept } from '../src/sync/clock.ts'
 import { DEFAULT_DRIFT, decide, learnSeekLead, migratePrefs } from '../src/sync/drift.ts'
 import { groupMessages, needsSeparator, seenText, separatorLabel, typingText } from '../src/utils/chat.ts'
 import { EMOJI_GROUPS, isJumbo, searchEmoji } from '../src/utils/emoji.ts'
+import { dominantHues } from '../src/utils/palette.ts'
+import { normalizeViz } from '../src/audio/visualizer.ts'
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts'
 import { afterFailure, assembleVerified, autoShares, chunkRanges, parseHeader, planFetch, sha256Id } from '../src/share/transfer.ts'
 
@@ -318,5 +320,38 @@ describe('chat display helpers', () => {
     expect(seenText(['Sam'], 1)).toBe('Seen')
     expect(seenText(['Sam', 'Kim'], 2)).toBe('Seen by everyone')
     expect(seenText(['Sam'], 3)).toBe('Seen by Sam')
+  })
+})
+
+describe('song colours and visual styles', () => {
+  const image = (colors: [number, number, number][], each = 100) => {
+    const px = new Uint8ClampedArray(colors.length * each * 4)
+    colors.forEach(([r, g, b], c) => { for (let i = 0; i < each; i++) px.set([r, g, b, 255], (c * each + i) * 4) })
+    return px
+  }
+
+  it('finds the two dominant, distinct hues of the artwork', () => {
+    const [h1, h2] = dominantHues(image([[230, 40, 40], [230, 40, 40], [40, 90, 230]]))!
+    expect(h1 < 15 || h1 > 345).toBe(true) // red wins (twice as much of it)
+    expect(h2).toBeGreaterThan(205)
+    expect(h2).toBeLessThan(235) // blue second
+  })
+
+  it('grey or near-white artwork has no song colour (falls back to the generated one)', () => {
+    expect(dominantHues(image([[128, 128, 128], [250, 250, 250], [10, 10, 10]]))).toBeNull()
+  })
+
+  it('a single-colour cover still gets a second, neighbouring hue', () => {
+    const [h1, h2] = dominantHues(image([[40, 200, 90]]))!
+    expect(Math.abs(h2 - h1)).toBe(40)
+  })
+
+  it('old visual styles become Ambient', () => {
+    expect(normalizeViz('bars')).toBe('ambient')
+    expect(normalizeViz('wave')).toBe('ambient')
+    expect(normalizeViz('glow')).toBe('ambient')
+    expect(normalizeViz(null)).toBe('ambient')
+    expect(normalizeViz('radial')).toBe('radial')
+    expect(normalizeViz('off')).toBe('off')
   })
 })
