@@ -5,7 +5,7 @@ import {
 } from '../shared/validate.ts'
 import { Clock, estimate, shouldAccept } from '../src/sync/clock.ts'
 import { DEFAULT_DRIFT, decide, learnSeekLead, migratePrefs } from '../src/sync/drift.ts'
-import { groupMessages, needsSeparator, seenText, separatorLabel, typingText } from '../src/utils/chat.ts'
+import { firstNewIndex, focusLayout, groupMessages, needsSeparator, seenText, separatorLabel, typingText } from '../src/utils/chat.ts'
 import { EMOJI_GROUPS, isJumbo, searchEmoji } from '../src/utils/emoji.ts'
 import { dominantHues } from '../src/utils/palette.ts'
 import { normalizeViz } from '../src/audio/visualizer.ts'
@@ -353,5 +353,36 @@ describe('song colours and visual styles', () => {
     expect(normalizeViz(null)).toBe('ambient')
     expect(normalizeViz('radial')).toBe('radial')
     expect(normalizeViz('off')).toBe('off')
+  })
+})
+
+describe('chat: new-messages line and focus mode', () => {
+  const msg = (id: string, authorId: string, at: number) => ({ id, authorId, at, text: id, reactions: {} })
+  it('the line goes before the first unread message from someone else', () => {
+    const msgs = [msg('a', 'sam', 1), msg('b', 'me', 2), msg('c', 'me', 5), msg('d', 'sam', 6)]
+    expect(firstNewIndex(msgs, 2, 'me')).toBe(3) // your own new messages don't count
+    expect(firstNewIndex(msgs, 6, 'me')).toBe(-1)
+    expect(firstNewIndex(msgs, 0, 'me')).toBe(-1) // nothing read yet (fresh room): no line
+  })
+
+  it('focus mode: emojis above and actions below; flips when there is no room; stays on screen', () => {
+    const mid = focusLayout({ top: 400, bottom: 450, left: 100, right: 300 }, 900, 412)
+    expect(mid.barTop).toBe(400 - 10 - 52)
+    expect(mid.cardTop).toBe(450 + 10)
+    const top = focusLayout({ top: 20, bottom: 70, left: 100, right: 300 }, 900, 412)
+    expect(top.barTop).toBeGreaterThanOrEqual(70) // no room above: the bar goes below the message
+    expect(top.cardTop).toBeGreaterThanOrEqual(top.barTop + 52)
+    const low = focusLayout({ top: 800, bottom: 860, left: 300, right: 400 }, 900, 412)
+    expect(low.cardTop + 104).toBeLessThanOrEqual(900 - 12) // card flips above near the bottom
+    expect(low.barLeft + 300).toBeLessThanOrEqual(412 - 12) // and nothing pokes off the right edge
+  })
+})
+
+describe('chat runs', () => {
+  it('the "New messages" line starts a fresh run even mid-conversation', () => {
+    const m = (id: string, at: number) => ({ id, authorId: 'sam', at, text: id, reactions: {} })
+    const msgs = [m('a', 1000), m('b', 2000), m('c', 3000)]
+    expect(groupMessages(msgs).length).toBe(1)
+    expect(groupMessages(msgs, undefined, 'b').map(g => g.messages.map(x => x.id))).toEqual([['a'], ['b', 'c']])
   })
 })

@@ -1,23 +1,32 @@
 // Room chat, Instagram-style: bubbles (yours on the right), double-tap to ❤️, press and hold for
 // reactions / reply / copy, swipe right to reply, "Seen", and big emoji-only messages.
+import { createPortal } from 'preact/compat'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { REACTIONS, type ChatMessage } from '../../shared/types.ts'
-import { me, participantById, room, toast } from '../state/room.ts'
-import { chatOpen, draft, notifyTyping, pending, reactToMessage, replyingTo, sendChat, typingNames } from '../state/social.ts'
-import { groupMessages, needsSeparator, seenText, separatorLabel, typingText } from '../utils/chat.ts'
+import { unlockAudio } from '../audio/player.ts'
+import { artUrls, resolveLocal } from '../library/library.ts'
+import { canControl, currentItem, mayControl, me, participantById, room, shownPlaying, toast, togglePlay } from '../state/room.ts'
+import { chatOpen, draft, notifyTyping, pending, reactToMessage, readUpTo, replyingTo, sendChat, typingNames } from '../state/social.ts'
+import { leaveChat } from '../state/ui.ts'
+import { firstNewIndex, focusLayout, groupMessages, needsSeparator, seenText, separatorLabel, typingText } from '../utils/chat.ts'
 import { isJumbo } from '../utils/emoji.ts'
 import { EmojiPicker } from './EmojiPicker.tsx'
 import { Icon } from './icons.tsx'
 import { openProfile } from './Participants.tsx'
-import { Avatar, Empty, Sheet } from './ui.tsx'
+import { Avatar, Cover, Empty, Sheet } from './ui.tsx'
 
 const QUICK = REACTIONS.slice(0, 6)
 const nameOf = (id: string) => (id === me.value ? 'You' : participantById(id)?.displayName ?? 'Someone')
 
-export function Chat() {
+/** `full`: the phone's full-screen chat (own top bar, no dock, composer riding on the keyboard). */
+export function Chat({ full = false }: { full?: boolean }) {
   const r = room.value!
   const listRef = useRef<HTMLDivElement>(null)
   const [atBottom, setAtBottom] = useState(true)
+  const atBottomRef = useRef(true)
+  atBottomRef.current = atBottom
+  // Where you'd read up to before opening the chat: the "New messages" line goes there.
+  const [dividerAt] = useState(() => readUpTo.peek())
   const [newBelow, setNewBelow] = useState(false)
   const typers = typingNames.value
   const count = r.chat.length + pending.value.length + typers.length
@@ -36,26 +45,51 @@ export function Chat() {
     else setNewBelow(true)
   }, [count])
 
+  // The list shrinks when the keyboard opens: stay pinned to the newest message if you were there.
+  useEffect(() => {
+    const el = listRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => { if (atBottomRef.current) el.scrollTop = el.scrollHeight })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Full screen: size to the visible viewport (keyboard-aware where the browser doesn't resize for it).
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!full || !vv) return
+    const set = () => document.documentElement.style.setProperty('--vvh', `${vv.height}px`)
+    set()
+    vv.addEventListener('resize', set)
+    return () => { vv.removeEventListener('resize', set); document.documentElement.style.removeProperty('--vvh') }
+  }, [full])
+
   const toBottom = () => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
     setNewBelow(false)
   }
 
   if (!r.settings.allowChat) {
-    return <section class="panel chat"><Empty icon="users" title="Chat is turned off in this room." /></section>
+    return (
+      <section class={full ? 'chat chat-full' : 'panel chat'}>
+        {full && <ChatTopBar />}
+        <Empty icon="users" title="Chat is turned off in this room." />
+      </section>
+    )
   }
 
-  const groups = groupMessages(r.chat)
   const many = r.participants.length > 2
   const last = r.chat.at(-1)
   // "Seen" sits under your newest message, once it's the latest thing in the chat.
   const others = r.participants.filter(p => p.id !== me.value)
   const seenBy = last && last.authorId === me.value
     ? others.filter(p => (p.seenAt ?? 0) >= last.at).map(p => p.displayName) : []
+  const firstNew = r.chat[firstNewIndex(r.chat, dividerAt, me.value)]?.id
+  const groups = groupMessages(r.chat, undefined, firstNew) // the "New messages" line starts a fresh run
 
   return (
-    <section class="panel chat" aria-labelledby="chat-h">
-      <header class="panel-head"><h2 id="chat-h">Chat</h2></header>
+    <section class={full ? 'chat chat-full' : 'panel chat'} aria-labelledby="chat-h">
+      {full ? <ChatTopBar /> : <header class="panel-head"><h2 id="chat-h">Chat</h2></header>}
       <div class="chat-scroll" ref={listRef} role="log" aria-live="polite" aria-label="Chat messages"
         onScroll={e => {
           const el = e.currentTarget
@@ -73,6 +107,7 @@ export function Chat() {
           return (
             <div key={g.messages[0].id} class="msg-run-wrap">
               {needsSeparator(prevAt, g.at) && <p class="chat-sep"><span>{separatorLabel(g.at)}</span></p>}
+              {g.messages[0].id === firstNew && <p class="chat-new" role="separator"><span>New messages</span></p>}
               <div class={`msg-run${mine ? ' mine' : ''}`}>
                 {!mine && (
                   <button class="run-avatar" onClick={() => who && openProfile(who.id)} aria-label={`${who?.displayName ?? 'Someone'}'s profile`} tabIndex={-1}>
@@ -105,6 +140,41 @@ export function Chat() {
   )
 }
 
+/** Full-screen chat's top bar: back, the room, who's here, and a now-playing chip. */
+function ChatTopBar() {
+  const r = room.value!
+  const online = r.participants.filter(p => p.isOnline).length
+  const t = currentItem.value?.track
+  const local = t ? resolveLocal(t) : null
+  const art = local?.status === 'ready' ? artUrls.value.get(local.local.id) : null
+  const playing = shownPlaying.value
+  return (
+    <header class="chat-top">
+      <button class="icon-btn" onClick={leaveChat} aria-label="Back to the player"><Icon name="arrowLeft" /></button>
+      <span class="room-emoji" aria-hidden="true">{r.emoji}</span>
+      <div class="chat-top-text">
+        <h2 id="chat-h" class="chat-top-name">{r.name}</h2>
+        <p class="chat-top-sub">{online <= 1 ? 'Just you' : `${online} listening`}</p>
+      </div>
+      {t && (
+        <div class="np-chip">
+          <button class="np-chip-open" onClick={leaveChat} aria-label={`Now playing: ${t.title}. Back to the player`}>
+            <Cover id={t.id} art={art} size={28} />
+            <span class="np-chip-title">{t.title}</span>
+          </button>
+          <button class="np-chip-play" aria-label={playing ? 'Pause' : 'Play'} aria-disabled={!canControl.value || undefined}
+            onClick={() => { if (!mayControl()) return; unlockAudio(); togglePlay() }}>
+            <span class="pp" data-state={playing ? 'playing' : 'paused'} aria-hidden="true">
+              <Icon name="play" size={16} />
+              <Icon name="pause" size={16} />
+            </span>
+          </button>
+        </div>
+      )}
+    </header>
+  )
+}
+
 function TypingBubble() {
   const first = room.value!.participants.find(p => p.displayName === typingNames.value[0])
   return (
@@ -118,7 +188,7 @@ function TypingBubble() {
 type Pos = 'single' | 'first' | 'middle' | 'last'
 
 function Message({ m, mine, pos }: { m: ChatMessage; mine: boolean; pos: Pos }) {
-  const [tray, setTray] = useState(false)
+  const [focus, setFocus] = useState<DOMRect | null>(null)
   const [picking, setPicking] = useState(false)
   const [showWho, setShowWho] = useState(false)
   const [pop, setPop] = useState(0)
@@ -131,23 +201,14 @@ function Message({ m, mine, pos }: { m: ChatMessage; mine: boolean; pos: Pos }) 
     if (!(m.reactions['❤️'] ?? []).includes(me.value)) reactToMessage(m.id, '❤️') // double-tap only ever adds
     setPop(p => p + 1)
   }
-  const reply = () => { replyingTo.value = m; setTray(false); document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus() }
-  useGestures(ref, { onDouble: heart, onLong: () => setTray(true), onSwipe: reply })
-
-  // Close the tray on an outside tap or Esc.
-  useEffect(() => {
-    if (!tray) return
-    const off = (e: Event) => { if (!ref.current?.contains(e.target as Node)) setTray(false) }
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setTray(false) }
-    document.addEventListener('pointerdown', off, true)
-    document.addEventListener('keydown', esc)
-    return () => { document.removeEventListener('pointerdown', off, true); document.removeEventListener('keydown', esc) }
-  }, [tray])
+  const reply = () => { replyingTo.value = m; setFocus(null); document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus() }
+  const open = () => { const b = ref.current?.querySelector('.bubble'); if (b) setFocus(b.getBoundingClientRect()) }
+  useGestures(ref, { onDouble: heart, onLong: open, onSwipe: reply })
 
   const entries = Object.entries(m.reactions).sort((a, b) => b[1].length - a[1].length)
   const total = entries.reduce((n, [, who]) => n + who.length, 0)
   return (
-    <div id={`msg-${m.id}`} class={`msg pos-${pos}${jumbo ? ' jumbo' : ''}${entries.length ? ' has-reacts' : ''}`} ref={ref}>
+    <div id={`msg-${m.id}`} class={`msg pos-${pos}${jumbo ? ' jumbo' : ''}${entries.length ? ' has-reacts' : ''}${focus ? ' focused' : ''}`} ref={ref}>
       {m.replyTo && (
         <button class="reply-quote" onClick={() => jumpTo(m.replyTo!.id)}>
           <span class="reply-who">{mine ? 'You' : nameOf(m.authorId)} replied to {m.replyTo.authorId === m.authorId ? (mine ? 'yourself' : 'themself') : m.replyTo.authorId === me.value ? 'you' : nameOf(m.replyTo.authorId)}</span>
@@ -157,7 +218,7 @@ function Message({ m, mine, pos }: { m: ChatMessage; mine: boolean; pos: Pos }) 
       <div class="bubble-row">
         <span class="swipe-hint" aria-hidden="true"><Icon name="reply" size={16} /></span>
         <p class="bubble">{m.text}</p>
-        <button class="msg-more" aria-label="Message options" aria-expanded={tray} onClick={() => setTray(!tray)}>
+        <button class="msg-more" aria-label="Message options" aria-haspopup="dialog" onClick={open}>
           <Icon name="more" size={16} />
         </button>
         {pop > 0 && <span key={pop} class="heart-pop" aria-hidden="true">❤️</span>}
@@ -169,29 +230,54 @@ function Message({ m, mine, pos }: { m: ChatMessage; mine: boolean; pos: Pos }) 
           {total > 1 && <span class="react-count">{total}</span>}
         </button>
       )}
-      {tray && (
-        <div class="msg-tray" role="menu" aria-label="Message options">
-          {allow && (
-            <div class="tray-emojis">
-              {QUICK.map(e => (
-                <button key={e} role="menuitem" class={(m.reactions[e] ?? []).includes(me.value) ? 'on' : ''}
-                  aria-label={`React ${e}`} onClick={() => { reactToMessage(m.id, e); setTray(false) }}>{e}</button>
-              ))}
-              <button role="menuitem" class="tray-plus" aria-label="More reactions" onClick={() => { setPicking(true); setTray(false) }}><Icon name="plus" size={16} /></button>
-            </div>
-          )}
-          <div class="tray-actions">
-            <button role="menuitem" onClick={reply}><Icon name="reply" size={16} /> Reply</button>
-            <button role="menuitem" onClick={() => {
-              navigator.clipboard?.writeText(m.text).then(() => toast('Copied'), () => toast("Couldn't copy", { tone: 'error' }))
-              setTray(false)
-            }}><Icon name="copy" size={16} /> Copy</button>
-          </div>
-        </div>
+      {focus && (
+        <FocusLayer m={m} rect={focus} mine={mine} jumbo={jumbo} allow={allow} onClose={() => setFocus(null)} onReply={reply}
+          onMore={() => { setFocus(null); setPicking(true) }} />
       )}
       <EmojiPicker open={picking} onClose={() => setPicking(false)} onPick={e => reactToMessage(m.id, e)} title="React to this message" />
       {showWho && <WhoReacted m={m} onClose={() => setShowWho(false)} />}
     </div>
+  )
+}
+
+/**
+ * Instagram-style focus mode: everything dims, the message lifts in place, emojis above it and
+ * Reply / Copy below. Rendered on <body> so no transformed ancestor can trap or clip it.
+ */
+function FocusLayer({ m, rect, mine, jumbo, allow, onClose, onReply, onMore }: {
+  m: ChatMessage; rect: DOMRect; mine: boolean; jumbo: boolean; allow: boolean; onClose: () => void; onReply: () => void; onMore: () => void
+}) {
+  const first = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const back = document.activeElement as HTMLElement | null
+    first.current?.focus({ preventScroll: true })
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onClose() } }
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('keydown', esc); back?.focus?.({ preventScroll: true }) }
+  }, [])
+  const lay = focusLayout(rect, innerHeight, innerWidth)
+  const mineReacted = (e: string) => (m.reactions[e] ?? []).includes(me.value)
+  return createPortal(
+    <div class="focus-layer" role="dialog" aria-label="Message options" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      {allow && (
+        <div class="focus-bar" role="menu" aria-label="React" style={{ top: lay.barTop, left: lay.barLeft }}>
+          {QUICK.map((e, i) => (
+            <button key={e} ref={i === 0 ? first : undefined} role="menuitem" class={mineReacted(e) ? 'on' : ''} aria-label={`React ${e}`}
+              onClick={() => { reactToMessage(m.id, e); onClose() }}>{e}</button>
+          ))}
+          <button role="menuitem" class="focus-plus" aria-label="More reactions" onClick={onMore}><Icon name="plus" size={18} /></button>
+        </div>
+      )}
+      <p class={`bubble focus-bubble${mine ? ' mine' : ''}${jumbo ? ' jumbo' : ''}`} style={{ top: rect.top, left: rect.left, width: rect.width }} aria-hidden="true">{m.text}</p>
+      <div class="focus-card" role="menu" style={{ top: lay.cardTop, left: lay.cardLeft }}>
+        <button ref={allow ? undefined : first} role="menuitem" onClick={onReply}>Reply <Icon name="reply" size={18} /></button>
+        <button role="menuitem" onClick={() => {
+          navigator.clipboard?.writeText(m.text).then(() => toast('Copied'), () => toast("Couldn't copy", { tone: 'error' }))
+          onClose()
+        }}>Copy <Icon name="copy" size={18} /></button>
+      </div>
+    </div>,
+    document.body,
   )
 }
 

@@ -20,8 +20,10 @@ export function Dock() {
   const r = room.value
   const roomPath = r ? `/room/${r.code}` : ''
   const onRoomPage = !!r && path === roomPath
-  const showMini = !!r && (!onRoomPage || (mobile && mobileTab.value !== 'room'))
-  const showNav = !!r && mobile && (onRoomPage || path === '/library')
+  // The phone chat is a full screen of its own (like a DM): no dock while you're in it.
+  const inChat = onRoomPage && mobile && mobileTab.value === 'chat'
+  const showMini = !!r && !inChat && (!onRoomPage || (mobile && mobileTab.value !== 'room'))
+  const showNav = !!r && !inChat && mobile && (onRoomPage || path === '/library')
   const visible = showMini || showNav
 
   // Everything that must stay clear of the dock (page bottom, toasts, chat, reactions) reads its

@@ -1,7 +1,7 @@
 // Chat, typing, unread counts and floating reactions — the "room feels alive" layer.
 import { computed, effect, signal } from '@preact/signals'
 import type { ChatMessage } from '../../shared/types.ts'
-import { socket } from '../realtime/socket.ts'
+import { clock, socket } from '../realtime/socket.ts'
 import { currentItem, me, participantById, room, roomCode, toast } from './room.ts'
 
 // ---- chat ----
@@ -54,15 +54,23 @@ export const typingNames = computed(() => {
 
 /** True while the chat panel is on screen (set by the Chat component). */
 export const chatOpen = signal(false)
+/** Server time of the newest message you've had on screen (for the "New messages" line). */
+export const readUpTo = signal(0)
 export const unread = signal(0)
 const seen = () => chatOpen.value && document.visibilityState === 'visible'
 effect(() => { if (chatOpen.value) unread.value = 0 })
-effect(() => { roomCode.value; unread.value = 0; replyingTo.value = null }) // a new room starts fresh
+effect(() => {
+  roomCode.value
+  unread.value = 0
+  replyingTo.value = null
+  readUpTo.value = roomCode.value ? clock.serverNow() : 0 // chat from before you joined isn't "new"
+}) // a new room starts fresh
 
 // "Seen": while the chat is on screen, tell the room the newest message you've seen (once each).
 let seenSent = ''
 const reportSeen = () => {
   const last = room.value?.chat.at(-1)
+  if (last && seen()) readUpTo.value = Math.max(readUpTo.value, last.at)
   if (!last || last.id === seenSent || !seen() || !socket.connected) return
   seenSent = last.id
   socket.emit('chat:seen', last.id)

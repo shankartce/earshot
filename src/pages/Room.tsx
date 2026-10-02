@@ -159,6 +159,7 @@ function RoomView() {
     <div class={`room${r.playback.isPlaying ? ' playing' : ''}`}>
       {vizStyle.value === 'ambient' ? <Ambient key={songHues.value.join()} /> : <div class="room-glow" aria-hidden="true" />}
       <FloatingReactions />
+      {mobile && mobileTab.value === 'chat' ? <Chat full /> : <>
       {mobile ? (
         <header class="room-head compact" ref={headRef}>
           <div class="room-title">
@@ -200,7 +201,6 @@ function RoomView() {
         <main class={`room-mobile tab-${mobileTab.value}`}>
           {mobileTab.value === 'room' && <><NowPlaying /><Participants onInvite={() => setShare(true)} /></>}
           {mobileTab.value === 'queue' && <Queue />}
-          {mobileTab.value === 'chat' && <Chat />}
         </main>
       ) : (
         <main class={`room-grid${wide ? ' three' : ''}`}>
@@ -212,6 +212,7 @@ function RoomView() {
           {wide && <aside class="room-chat"><Chat /></aside>}
         </main>
       )}
+      </>}
 
       <ShareSheet open={share} onClose={() => setShare(false)} />
       <SettingsSheet open={settings} onClose={() => setSettings(false)} />
