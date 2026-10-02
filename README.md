@@ -9,7 +9,7 @@ Everyone plays their **own** copy of each song, and your music is never uploaded
 
 [![MIT License](https://img.shields.io/badge/license-MIT-ff7a59.svg)](LICENSE)
 ![Node 22.18+](https://img.shields.io/badge/node-%E2%89%A522.18-ffb454.svg)
-![Tests](https://img.shields.io/badge/tests-89%20passing-7ccf6a.svg)
+![Tests](https://img.shields.io/badge/tests-90%20passing-7ccf6a.svg)
 ![Built with Preact + Socket.IO](https://img.shields.io/badge/built%20with-Preact%20%2B%20Socket.IO-b388ff.svg)
 
 ### **▶ [Try it live: earshot-30yv.onrender.com](https://earshot-30yv.onrender.com)**
@@ -138,6 +138,8 @@ No. There's no upload feature at all, and nothing is ever sent to Earshot's serv
 
 Only for music you have the right to share: your own recordings, or songs under Creative Commons or in the public domain. Open the song's **⋯** menu and choose **Let friends get a copy…**, pick the licence, and confirm you have the right to share it. Friends missing that song get it automatically in the background (or tap **Get a copy**), straight from your browser to theirs. It never passes through Earshot's server, it's checked to be the exact same file, and it stays in their library under **Shared with me**, labelled with who shared it and the licence.
 
+If everything you add is yours to share (say, you're a musician), turn on **⚙ Settings → Share songs I add automatically**. You confirm once and pick the licence, and from then on every song you add to your library or a queue is shared with no extra taps. It's off by default, and songs friends shared with you are never passed on.
+
 **Sharing policy:** don't share songs you bought, streamed or ripped from CDs; that's copyright infringement in most countries. Earshot can't verify licences; the person sharing is responsible. Direct connections don't work on every network (some mobile carriers and office networks block them).
 </details>
 
@@ -208,7 +210,7 @@ npm start          # serves the app + realtime server on $PORT (default 3000)
 
 ```bash
 npm run dev         # app + realtime server in one process (http://localhost:5173)
-npm test            # 89 unit + multi-client integration tests (Vitest)
+npm test            # 90 unit + multi-client integration tests (Vitest)
 npm run typecheck   # TypeScript
 npm run build       # production client → dist/
 npm start           # production server (serves dist/)

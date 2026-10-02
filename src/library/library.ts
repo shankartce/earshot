@@ -6,6 +6,7 @@ import type { License, Track } from '../../shared/types.ts'
 import { isDemoTab, read, write } from '../state/profile.ts'
 import type { WorkerReq, WorkerRes } from './hash.worker.ts'
 import { resolve, type Resolution } from './match.ts'
+import { autoShares } from '../share/transfer.ts'
 import { readTags, thumbnail } from './metadata.ts'
 
 export interface LocalTrack extends Track {
@@ -218,6 +219,7 @@ async function importNow(files: File[]): Promise<ImportResult> {
     importing.value = { done: ++done, total: audio.length }
   }
   importing.value = null
+  applyAutoShare(result.tracks)
   save()
   return result
 }
@@ -273,6 +275,21 @@ export function setShare(localId: string, license: License | null) {
   const { share: _old, ...rest } = t
   localTracks.value = new Map(localTracks.value).set(localId, license ? { ...rest, share: { license, attestedAt: Date.now() } } : rest)
   save()
+}
+
+// ---- auto-share (opt-in) ----
+// You attest once, in Settings, that everything you add is yours to share, and pick the licence.
+// Never on by default and there is no default licence: most music people own can't be shared.
+export interface AutoShare { license: License; attestedAt: number }
+export const autoShare = signal<AutoShare | null>(read<AutoShare | null>('jam:autoshare', null))
+export function setAutoShare(v: AutoShare | null) {
+  autoShare.value = v
+  write('jam:autoshare', v)
+}
+/** Mark songs you just added (imported or queued) as shared, when auto-share is on. */
+export function applyAutoShare(tracks: LocalTrack[]) {
+  const a = autoShare.value
+  for (const t of tracks) if (autoShares(t, a)) setShare(t.id, a.license)
 }
 
 /**

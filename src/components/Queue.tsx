@@ -4,7 +4,7 @@ import { useEffect, useState } from 'preact/hooks'
 import type { QueueItem, Track } from '../../shared/types.ts'
 import { artUrls, importing, localTracks, resolveLocal } from '../library/library.ts'
 import { bestOffer, isActive, offersFor, receiving, requestCopy } from '../share/p2p.ts'
-import { importAndQueue } from '../state/actions.ts'
+import { importAndQueue, requeue } from '../state/actions.ts'
 import { canControl, canEditQueue, me, participantById, playback, queue, room, shownQueue } from '../state/room.ts'
 import { useFlip } from '../utils/flip.ts'
 import { fmtTime } from '../utils/format.ts'
@@ -221,7 +221,7 @@ function RecentlyPlayed() {
               <span class="q-side"><Availability track={t} /></span>
             </div>
             <button class="icon-btn sm" aria-label={`Add ${t.title} to the queue again`} title="Add again"
-              onClick={() => queue({ type: 'ADD', tracks: [t] })}><Icon name="plus" size={16} /></button>
+              onClick={() => requeue(t)}><Icon name="plus" size={16} /></button>
           </li>
         ))}
       </ul>

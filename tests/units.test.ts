@@ -7,7 +7,7 @@ import { Clock, estimate, shouldAccept } from '../src/sync/clock.ts'
 import { DEFAULT_DRIFT, decide, learnSeekLead, migratePrefs } from '../src/sync/drift.ts'
 import { groupMessages, typingText } from '../src/utils/chat.ts'
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts'
-import { afterFailure, assembleVerified, chunkRanges, parseHeader, planFetch, sha256Id } from '../src/share/transfer.ts'
+import { afterFailure, assembleVerified, autoShares, chunkRanges, parseHeader, planFetch, sha256Id } from '../src/share/transfer.ts'
 
 const HASH = 'sha256:' + 'a'.repeat(64)
 
@@ -156,6 +156,14 @@ describe('drift correction', () => {
 })
 
 describe('p2p sharing: validation and transfer', () => {
+  it("auto-share: only when turned on, never a friend's copy, never overrides a licence you chose", () => {
+    const on = { license: 'cc-by' as const, attestedAt: 1 }
+    expect(autoShares({}, on)).toBe(true)
+    expect(autoShares({}, null)).toBe(false) // off by default
+    expect(autoShares({ sharedBy: { name: 'Sam', license: 'cc0', at: 1 } }, on)).toBe(false) // received copies are never passed on
+    expect(autoShares({ share: { license: 'own', attestedAt: 1 } }, on)).toBe(false)
+  })
+
   const T = 'sha256:' + 'b'.repeat(64)
 
   it('signals: known types only, bounded sizes, extras dropped', () => {

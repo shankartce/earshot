@@ -1,6 +1,7 @@
 // Cross-cutting user actions that touch both the local library and the room.
 import { effect } from '@preact/signals'
-import { importFiles, lostTracks, toTrack, type ImportResult, type LocalTrack } from '../library/library.ts'
+import { applyAutoShare, importFiles, localTracks, lostTracks, toTrack, type ImportResult, type LocalTrack } from '../library/library.ts'
+import type { Track } from '../../shared/types.ts'
 import { queue, room, toast } from './room.ts'
 
 // If the browser cleared stored songs, say so once instead of silently showing them as missing.
@@ -23,8 +24,16 @@ export function reportImport(res: ImportResult) {
 export async function queueTracks(tracks: LocalTrack[]) {
   if (!tracks.length || !room.value) return
   const batch = tracks.slice(0, 100)
+  applyAutoShare(batch)
   const r = await queue({ type: 'ADD', tracks: batch.map(toTrack) })
   if (r.ok) toast(batch.length === 1 ? `Added “${batch[0].title}”` : `Added ${batch.length} songs`)
+}
+
+/** Add a song from the room's history again (yours or not). */
+export function requeue(t: Track) {
+  const own = localTracks.value.get(t.id)
+  if (own) applyAutoShare([own])
+  return queue({ type: 'ADD', tracks: [t] })
 }
 
 /** Import local files, then add them to the room's queue. */

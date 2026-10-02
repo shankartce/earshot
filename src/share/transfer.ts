@@ -91,3 +91,7 @@ export async function assembleVerified(parts: ArrayBuffer[], header: Header): Pr
   if (blob.size !== header.size) return null
   return (await sha256Id(blob)) === header.trackId ? blob : null
 }
+
+/** Does auto-share mark this track? Never a friend's copy, never one you already chose a licence for. */
+export const autoShares = <A>(t: { share?: unknown; sharedBy?: unknown }, setting: A | null): setting is A =>
+  !!setting && !t.share && !t.sharedBy

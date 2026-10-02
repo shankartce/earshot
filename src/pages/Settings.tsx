@@ -6,6 +6,9 @@ import { DEFAULT_DRIFT } from '../sync/drift.ts'
 import { profile, randomAvatar, saveProfile } from '../state/profile.ts'
 import { toast } from '../state/room.ts'
 import { autoFetch, setAutoFetch } from '../share/p2p.ts'
+import { autoShare, setAutoShare } from '../library/library.ts'
+import { AutoShareSheet } from '../components/ShareSheet.tsx'
+import { LICENSES } from '../../shared/types.ts'
 import { BackLink } from './Join.tsx'
 
 function Num({ label, hint, value, min, max, step, unit, onChange }: {
@@ -24,6 +27,8 @@ function Num({ label, hint, value, min, max, step, unit, onChange }: {
 export function Settings() {
   const [p, setP] = useState<Profile>(profile.value ?? { displayName: '', avatar: randomAvatar() })
   const d = prefs.value
+  const [askAutoShare, setAskAutoShare] = useState(false)
+  const a = autoShare.value
   return (
     <main class="page center">
       <div class="card narrow">
@@ -45,6 +50,18 @@ export function Settings() {
           </span>
           <input type="checkbox" role="switch" class="switch" checked={autoFetch.value} onChange={e => setAutoFetch(e.currentTarget.checked)} />
         </label>
+
+        <label class="toggle-row">
+          <span>
+            Share songs I add automatically
+            <span class="hint">{a
+              ? `On (${LICENSES[a.license]}). Every song you add to your library or a queue is offered to the room. Songs friends shared with you are never passed on.`
+              : 'Off. Only for music you have the right to share — you confirm that once when turning it on.'}</span>
+          </span>
+          <input type="checkbox" role="switch" class="switch" checked={!!a}
+            onChange={e => { if (e.currentTarget.checked) { e.currentTarget.checked = false; setAskAutoShare(true) } else setAutoShare(null) }} />
+        </label>
+        {askAutoShare && <AutoShareSheet onClose={() => setAskAutoShare(false)} />}
 
         <hr class="sep" />
         <h2 class="section-h">Sync tuning</h2>
