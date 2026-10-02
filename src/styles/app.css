@@ -311,7 +311,7 @@ fieldset:disabled .segmented label { cursor: not-allowed; opacity: 0.6; }
 .room-side { display: grid; gap: 16px; }
 
 /* stage / now playing */
-.stage { --art: min(72vw, 360px, 40svh); display: grid; justify-items: center; gap: 18px; text-align: center; padding: clamp(12px, 3vw, 28px) 0; }
+.stage { --art: min(72vw, 360px, 40svh); display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 18px; text-align: center; padding: clamp(12px, 3vw, 28px) 0; }
 .art-wrap { position: relative; width: var(--art); margin-right: clamp(24px, 6vw, 60px); }
 .art { width: 100%; box-shadow: 0 30px 80px -20px hsl(calc(var(--h1) * 1deg) 70% 20% / 0.9), 0 10px 30px rgba(0, 0, 0, 0.5); position: relative; z-index: 1; transition: transform var(--dur-slow) var(--ease); }
 .art .cover-inner { width: 100%; }
@@ -670,7 +670,7 @@ code { font-family: var(--font-mono); font-size: 0.9em; background: var(--surfac
 ::view-transition-group(player) { animation-duration: 420ms; animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1); }
 
 /* phone room */
-.room-mobile { display: grid; gap: 16px; }
+.room-mobile { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; } /* never wider than the screen, whatever a child wants */
 .room-mobile.tab-queue .queue .queue-list, .room-mobile.tab-chat .chat-scroll { max-height: none; }
 /* Phone chat fills exactly the space between the room header and the dock, so the composer is never under it. */
 .room-mobile.tab-chat .chat { height: calc(100svh - var(--head-h, 130px) - var(--dock-h, 0px) - var(--safe-bottom) - 20px); min-height: 300px; }
