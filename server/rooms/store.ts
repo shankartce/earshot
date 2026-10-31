@@ -4,7 +4,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { CODE_ALPHABET, CODE_LENGTH } from '../../shared/validate.ts'
-import { createRoom, type Room } from '../state/room.ts'
+import { createRoom, defaultSettings, type Room } from '../state/room.ts'
 
 export const ROOM_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -22,6 +22,7 @@ export class RoomStore {
           // Nobody is connected right after a restart; their grace period starts now.
           for (const p of room.participants) Object.assign(p, { isOnline: false, lastSeen: now, readiness: 'idle' })
           room.shares = {} // share offers only exist while their sharer is connected
+          room.settings = { ...defaultSettings(), ...room.settings } // rooms saved before newer settings existed
           this.rooms.set(room.code, room)
         }
       } catch (err) {

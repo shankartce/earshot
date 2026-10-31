@@ -3,11 +3,15 @@ import crypto from 'node:crypto'
 import type { Server as HttpServer } from 'node:http'
 import { Server, type Socket } from 'socket.io'
 import type { Ack, ClientToServer, Joined, RoomPatch, ServerToClient } from '../../shared/events.ts'
+import { DJ_ID, extractJson, mentionOf, parseDjPlan, parsePlaylistPlan } from '../../shared/dj.ts'
 import { positionAt } from '../../shared/playback.ts'
+import type { ChatMessage, Track } from '../../shared/types.ts'
 import {
   cleanText, parseChatSend, parseCode, parsePlaybackCommand, parseProfile, parseQueueCommand, parseReaction,
-  parseLicense, parseReadiness, parseSettingsPatch, parseSignal, parseTrackId,
+  parseLicense, parseReadiness, parseSettingsPatch, parseSignal, parseTrackId, parseTracks,
 } from '../../shared/validate.ts'
+import { applyDjPlan, buildDjPrompt, buildPlaylistPrompt, djReply, PLAYLIST_CANDIDATES } from '../ai/dj.ts'
+import { AiError, type AiClient } from '../ai/provider.ts'
 import { rateLimiter } from '../rateLimit.ts'
 import type { RoomStore } from '../rooms/store.ts'
 import {
@@ -22,12 +26,15 @@ type Sock = Socket<ClientToServer, ServerToClient, Record<string, never>, Socket
 export interface RealtimeOptions {
   store: RoomStore
   graceMs?: number // how long a dropped participant stays "present" before "left the room"
+  ai?: AiClient | null // the room DJ's model; null/absent means no AI on this server
 }
 
 const GENERIC_ERROR = 'Something went wrong. Please try again.'
 const newId = () => crypto.randomUUID()
 
-export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: RealtimeOptions): IO {
+export const CATALOG_MAX = 1000
+
+export function attachRealtime(http: HttpServer, { store, graceMs = 30_000, ai = null }: RealtimeOptions): IO {
   // destroyUpgrade:false so Vite's HMR websocket can share the dev server.
   const io: IO = new Server(http, {
     maxHttpBufferSize: 256 * 1024,
@@ -42,6 +49,9 @@ export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: Re
   // Peer-to-peer transfers in progress: each is pinned to exactly two sockets (one tab each side).
   const transfers = new Map<string, { requester: string; sharer: string; expires: number }>()
   const TRANSFER_TTL_MS = 10 * 60_000
+  // Opted-in song lists for the DJ, per socket. Memory only: never saved, never sent to anyone.
+  const catalogs = new Map<string, { code: string; tracks: Track[] }>() // socket.id
+  const djBusy = new Set<string>() // rooms with a DJ request in flight
 
   const patch = (room: Room, p: { playback?: boolean; queue?: boolean; history?: boolean; participants?: boolean; settings?: boolean; meta?: boolean; shares?: boolean }) => {
     const out: RoomPatch = {}
@@ -94,6 +104,35 @@ export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: Re
     for (const t of [...leaveTimers.values(), ...endTimers.values()]) clearTimeout(t)
   })
 
+  /** Someone @mentioned the DJ: ask the model, run its plan as them, and answer in the chat thread. */
+  const runDj = async (room: Room, pid: string, msg: ChatMessage, request: string, socket: Sock) => {
+    if (!ai) return
+    if (djBusy.has(room.code)) return socket.emit('ai:error', `${room.settings.djName} is still working on the last request.`)
+    djBusy.add(room.code)
+    const typing = setInterval(() => io.to(room.code).emit('chat:typing', DJ_ID), 2500)
+    io.to(room.code).emit('chat:typing', DJ_ID)
+    try {
+      const requester = room.participants.find(p => p.id === pid)?.displayName ?? 'Someone'
+      const lists = [...catalogs.values()].filter(c => c.code === room.code).map(c => c.tracks)
+      const prompt = buildDjPrompt(room, lists, request, requester)
+      const answer = await ai.complete({ system: prompt.system, user: prompt.user, maxTokens: 600 })
+      // The room may have been deleted, or the DJ switched off, while the model was thinking.
+      if (store.get(room.code) !== room || !room.settings.aiDj) return
+      const plan = parseDjPlan(extractJson(answer), { tracks: new Set(prompt.tracks.keys()), items: new Set(prompt.items.keys()) })
+      const { change, notes } = applyDjPlan(room, pid, plan.actions, prompt, Date.now(), newId)
+      afterChange(room, change)
+      const reply = addChat(room, DJ_ID, djReply(plan.reply, notes), Date.now(), newId(), msg.id)
+      if (typeof reply !== 'string') io.to(room.code).emit('chat:message', reply)
+      store.save()
+    } catch (err) {
+      if (!(err instanceof AiError)) console.error('[ai:dj]', err)
+      socket.emit('ai:error', err instanceof AiError ? err.message : `${room.settings.djName} couldn't answer just now.`)
+    } finally {
+      clearInterval(typing)
+      djBusy.delete(room.code)
+    }
+  }
+
   io.on('connection', (socket: Sock) => {
     const allow = rateLimiter()
     const ctx = () => {
@@ -116,6 +155,7 @@ export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: Re
 
     const leaveCurrent = () => {
       const c = ctx()
+      catalogs.delete(socket.id)
       if (!c) return
       socket.leave(c.room.code)
       socket.data = {}
@@ -238,6 +278,10 @@ export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: Re
       io.to(c.room.code).emit('chat:message', msg)
       store.save()
       done({ ok: true })
+      const request = ai && c.room.settings.aiDj ? mentionOf(msg.text, c.room.settings.djName) : null
+      if (request === null) return
+      if (!allow('ai')) socket.emit('ai:error', `Give ${c.room.settings.djName} a minute; that's a lot of requests.`)
+      else void runDj(c.room, c.pid, msg, request, socket)
     })
 
     on('chat:seen', raw => {
@@ -306,6 +350,37 @@ export function attachRealtime(http: HttpServer, { store, graceMs = 30_000 }: Re
       if (gone) io.to(c.room.code).emit('presence:left', gone)
       patch(c.room, { participants: true, shares: true })
       done({ ok: true })
+    })
+
+    // ---- AI: the room DJ and mood playlists (song details and chat only; never audio) ----
+
+    on('ai:status', reply => { if (typeof reply === 'function') reply({ available: !!ai }) })
+
+    on('ai:catalog', raw => {
+      const c = ctx()
+      if (!c || !allow('share')) return
+      const tracks = parseTracks(raw, CATALOG_MAX)
+      if (tracks.length) catalogs.set(socket.id, { code: c.room.code, tracks })
+      else catalogs.delete(socket.id)
+    })
+
+    on('ai:playlist', (raw, reply) => {
+      const done = replyFn(reply)
+      if (!ai) return done({ ok: false, error: 'AI is not set up on this server.' })
+      const prompt = cleanText(raw?.prompt, 200)
+      const tracks = parseTracks(raw?.tracks, PLAYLIST_CANDIDATES)
+      if (!prompt) return done({ ok: false, error: 'Describe the mood you want.' })
+      if (!tracks.length) return done({ ok: false, error: 'Add some songs to your library first.' })
+      if (!allow('ai')) return done({ ok: false, error: 'Slow down a little and try again in a minute.' })
+      const built = buildPlaylistPrompt(prompt, tracks)
+      ai.complete({ system: built.system, user: built.user, maxTokens: 900 }).then(answer => {
+        const plan = parsePlaylistPlan(extractJson(answer), new Set(built.tracks.keys()))
+        if (!plan.tracks.length) return done({ ok: false, error: "The AI couldn't find songs for that mood in your library." })
+        done({ ok: true, name: plan.name || prompt.slice(0, 40), trackIds: plan.tracks.map(id => built.tracks.get(id)!.id) })
+      }, err => {
+        if (!(err instanceof AiError)) console.error('[ai:playlist]', err)
+        done({ ok: false, error: err instanceof AiError ? err.message : GENERIC_ERROR })
+      })
     })
 
     // ---- peer-to-peer sharing of attested tracks: only metadata and the WebRTC handshake pass here ----

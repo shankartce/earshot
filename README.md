@@ -9,7 +9,7 @@ Everyone plays their **own** copy of each song, and your music is never uploaded
 
 [![MIT License](https://img.shields.io/badge/license-MIT-ff7a59.svg)](LICENSE)
 ![Node 22.18+](https://img.shields.io/badge/node-%E2%89%A522.18-ffb454.svg)
-![Tests](https://img.shields.io/badge/tests-115%20passing-7ccf6a.svg)
+![Tests](https://img.shields.io/badge/tests-137%20passing-7ccf6a.svg)
 ![Built with Preact + Socket.IO](https://img.shields.io/badge/built%20with-Preact%20%2B%20Socket.IO-b388ff.svg)
 
 ### **▶ [Try it live: earshot-30yv.onrender.com](https://earshot-30yv.onrender.com)**
@@ -44,6 +44,8 @@ Unlike streaming services, Earshot doesn't stream anything. **Each person plays 
 | 🌈 **Song colours & visuals** | The room takes on each song's colours from its artwork. *Ambient* washes the whole screen in them, swelling with the music; *Ring* hugs the cover. Computed only on your device. |
 | 🎤 **Synced lyrics** | Add a `.lrc` lyrics file and the lines light up in time with the room. |
 | 👑 **Host controls** | Choose who can control playback or edit the queue, and turn chat or reactions on or off. Tap anyone for their profile: hand over host, or remove someone. |
+| 🤖 **AI DJ** *(optional)* | Ask the room's DJ in chat: *"@DJ queue three mellow songs"*, *"@DJ skip this"*. It picks songs people in the room actually own, answers in the thread, and follows the room's rules. Turn it on in **⚙ Room settings** and give it a name. Works with any LLM the host sets up, open-source ones included. |
+| ✨ **Mood playlists** *(optional)* | On the **Library** page, describe a mood (*"rainy Sunday coffee"*) and get a playlist built from your own songs. |
 | 📱 **Great on phones** | Install it like an app, keep listening with the screen locked, and use lock-screen controls. Bottom tabs, a mini-player that follows you around, and big touch-friendly controls. |
 
 <div align="center">
@@ -180,6 +182,17 @@ Earshot is built for recent Chrome, Edge, Firefox and Safari, on desktop and pho
 </details>
 
 <details>
+<summary><b>What does the AI DJ see? Where does it run?</b></summary>
+
+The AI is **off** unless whoever hosts Earshot sets it up (see [AI DJ setup](#-ai-dj-setup-optional)) *and* the room's host turns it on. The AI service the host chose then receives:
+- the room's queue and recently played songs (title, artist, album, length);
+- recent chat in that room and people's display names;
+- if you turn on **⚙ Settings → Let room DJs see my song list**, your library's titles, artists and lengths, so the DJ can pick songs people actually have. It's off by default, kept only in the server's memory, and forgotten when you leave.
+
+It **never** gets audio, artwork, your room token or anything else from your device. The DJ has no powers of its own: whatever it does (queue, skip, pause) runs as the person who asked, so *Host only* rooms stay host-only. Mood playlists send your song list for that one request only.
+</details>
+
+<details>
 <summary><b>Is there a size limit on rooms?</b></summary>
 
 Rooms are designed for small groups of friends and allow up to 50 people. The queue holds up to 500 songs.
@@ -202,6 +215,26 @@ npm start          # serves the app + realtime server on $PORT (default 3000)
 | `PORT` | `3000` | Port to listen on |
 | `DATA_FILE` | `data/rooms.json` | Where rooms are saved. Put it on a persistent disk so rooms survive restarts. |
 
+### 🤖 AI DJ setup (optional)
+
+The AI DJ and mood playlists work with **any LLM**: anything that speaks the OpenAI-compatible Chat Completions API (OpenAI, OpenRouter, Groq, Together, Gemini, Mistral, DeepSeek, or open-source models running locally in Ollama, LM Studio, vLLM or llama.cpp), plus Anthropic's API natively. Copy [`.env.example`](.env.example) to `.env` and fill in one block, or set the same variables on your host. The key stays on the server; browsers never see it, and the page's security policy doesn't change.
+
+| Environment variable | Default | What it does |
+|---|---|---|
+| `AI_MODEL` | *(none)* | The model to use, e.g. `gpt-4o-mini`, `llama3.1`, `claude-sonnet-5-5`. **AI is off without it.** |
+| `AI_API_KEY` | *(none)* | Your key for that service. Not needed for local servers like Ollama. |
+| `AI_BASE_URL` | the provider's public API | e.g. `https://openrouter.ai/api/v1` or `http://localhost:11434/v1` (Ollama) |
+| `AI_PROVIDER` | `openai` | `openai` for any OpenAI-compatible API, or `anthropic` for Anthropic's native API |
+| `AI_TIMEOUT_MS` | `30000` | How long to wait for an answer (local models can be slow) |
+
+```bash
+# Free and fully local: install Ollama, then
+ollama pull llama3.1
+echo 'AI_BASE_URL=http://localhost:11434/v1
+AI_MODEL=llama3.1' > .env
+npm run dev
+```
+
 **Render example:** create a *Web Service* from this repo with build command `npm install && npm run build`, start command `npm start`, and optionally a persistent disk mounted at `/data` with `DATA_FILE=/data/rooms.json`.
 
 ---
@@ -210,7 +243,7 @@ npm start          # serves the app + realtime server on $PORT (default 3000)
 
 ```bash
 npm run dev         # app + realtime server in one process (http://localhost:5173)
-npm test            # 115 unit + multi-client integration tests (Vitest)
+npm test            # 137 unit + multi-client integration tests (Vitest)
 npm run typecheck   # TypeScript
 npm run build       # production client → dist/
 npm start           # production server (serves dist/)
@@ -230,13 +263,15 @@ npm start           # production server (serves dist/)
 
 ### Project layout
 ```
-shared/    types, typed socket events, input validators, playhead math (used by both sides)
+shared/    types, typed socket events, input validators, playhead math, dj.ts (AI DJ: mentions,
+           answer parsing) (used by both sides)
 server/    app.ts (HTTP + security headers) · state/room.ts (pure room logic)
            rooms/store.ts (memory + JSON snapshot) · websocket/handlers.ts · rateLimit.ts
+           ai/ (provider.ts: any LLM via env · dj.ts: prompts and running the DJ's plan)
 src/       audio/ (sync player, visualizer) · sync/ · library/ (storage, hashing worker,
            tags, matching) · share/ (rights-gated WebRTC sharing) · lyrics/ · state/ ·
            components/ · pages/ · styles/
-tests/     room logic, sync math, matching, tag parsing, lyrics, HTTP, multi-client scenarios
+tests/     room logic, sync math, matching, tag parsing, lyrics, HTTP, multi-client scenarios, AI DJ
 ```
 
 See [`CLAUDE.md`](CLAUDE.md) for the design rules the project must keep: audio never touches the server, the server is authoritative, and every command is versioned.
@@ -253,6 +288,7 @@ Issues and pull requests are welcome. Please run `npm test` and `npm run typeche
 - Your seat in a room is a private token kept in your browser, never shown to others.
 - A strict Content Security Policy and related headers are sent on every page.
 - Visualizers and lyrics are computed on your device.
+- The optional AI DJ only ever sees song details and chat, never audio. Its API key lives on the server only.
 
 ## 📄 License
 

@@ -1,6 +1,7 @@
 // Share (invite) and room-settings sheets.
 import { useEffect, useState } from 'preact/hooks'
-import type { Permission } from '../../shared/types.ts'
+import { DJ_NAME_RE, type Permission } from '../../shared/types.ts'
+import { aiAvailable } from '../state/ai.ts'
 import { demoEnabled, ROOM_EMOJI } from '../state/profile.ts'
 import { isHost, me, participantById, room, toast, updateSettings } from '../state/room.ts'
 import { openProfile } from './Participants.tsx'
@@ -92,6 +93,14 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
   const [name, setName] = useState(r.name)
   useEffect(() => { if (open) setName(r.name) }, [open, r.name])
   const saveName = () => { if (name.trim() && name !== r.name) updateSettings({ name }) }
+  const [djName, setDjName] = useState(s.djName)
+  useEffect(() => { if (open) setDjName(s.djName) }, [open, s.djName])
+  const djNameOk = DJ_NAME_RE.test(djName.trim())
+  const saveDjName = () => {
+    if (djName.trim() === s.djName) return
+    if (djNameOk) updateSettings({ djName: djName.trim() })
+    else { toast('DJ names are one word: letters, numbers, - or _.', { tone: 'error' }); setDjName(s.djName) }
+  }
   const hostName = r.hostId ? participantById(r.hostId)?.displayName : null
 
   return (
@@ -117,6 +126,23 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
         <Toggle label="Allow chat" checked={s.allowChat} disabled={!host} onChange={v => updateSettings({ allowChat: v })} />
         <Toggle label="Allow reactions" checked={s.allowReactions} disabled={!host} onChange={v => updateSettings({ allowReactions: v })} />
       </div>
+      <fieldset class="field" disabled={!host || !aiAvailable.value}>
+        <legend class="label">AI DJ</legend>
+        <Toggle label={`🤖 Let people ask @${s.djName} in chat`} checked={s.aiDj && aiAvailable.value} disabled={!host || !aiAvailable.value}
+          onChange={v => updateSettings({ aiDj: v })} />
+        {aiAvailable.value ? (
+          <>
+            <div class="input-row">
+              <input class="input" value={djName} maxLength={16} onInput={e => setDjName(e.currentTarget.value)}
+                onBlur={saveDjName} onKeyDown={e => e.key === 'Enter' && saveDjName()} aria-label="DJ name" aria-invalid={!djNameOk} />
+            </div>
+            <p class="muted small">
+              The DJ can queue, skip or pause, with the same permissions as whoever asks. It sees song titles,
+              recent chat and the song lists people opt in to share; never anyone's audio. They go to the AI service this server's host set up.
+            </p>
+          </>
+        ) : <p class="muted small">Not set up on this Earshot server.</p>}
+      </fieldset>
       <hr class="sep" />
       <div class="row">
         <button class="btn" onClick={() => { onClose(); openProfile(me.value) }}><Icon name="settings" size={16} /> Your profile</button>

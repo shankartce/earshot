@@ -6,6 +6,7 @@ import { REACTIONS, type ChatMessage } from '../../shared/types.ts'
 import { unlockAudio } from '../audio/player.ts'
 import { artUrls, resolveLocal } from '../library/library.ts'
 import { canControl, currentItem, mayControl, me, participantById, room, shownPlaying, toast, togglePlay } from '../state/room.ts'
+import { aiAvailable } from '../state/ai.ts'
 import { chatOpen, draft, notifyTyping, pending, reactToMessage, readUpTo, replyingTo, sendChat, typingNames } from '../state/social.ts'
 import { leaveChat } from '../state/ui.ts'
 import { firstNewIndex, focusLayout, groupMessages, needsSeparator, seenText, separatorLabel, typingText } from '../utils/chat.ts'
@@ -386,6 +387,7 @@ function Composer() {
   const ref = useRef<HTMLTextAreaElement>(null)
   const [picking, setPicking] = useState(false)
   const reply = replyingTo.value
+  const dj = aiAvailable.value && room.value?.settings.aiDj ? room.value.settings.djName : null
   const send = async (t: string) => {
     if (!t.trim()) return
     if (t === text) setText('')
@@ -409,11 +411,16 @@ function Composer() {
           <button class="icon-btn sm" aria-label="Cancel reply" onClick={() => { replyingTo.value = null }}><Icon name="close" size={16} /></button>
         </div>
       )}
+      {dj && !text.trim() && (
+        <div class="row dj-hint">
+          <button type="button" class="chip" onClick={() => { setText(`@${dj} `); ref.current?.focus() }}>🤖 Ask @{dj}</button>
+        </div>
+      )}
       <form class="composer" onSubmit={e => { e.preventDefault(); send(text) }}>
         <button type="button" class="icon-btn emoji-btn" aria-label="Insert emoji" aria-haspopup="dialog" onClick={() => setPicking(true)}>
           <Icon name="smile" size={20} />
         </button>
-        <textarea ref={ref} class="input" rows={1} maxLength={500} value={text} placeholder="Message…" aria-label="Message the room"
+        <textarea ref={ref} class="input" rows={1} maxLength={500} value={text} placeholder={dj ? `Message, or ask @${dj}…` : 'Message…'} aria-label="Message the room"
           onInput={e => { setText(e.currentTarget.value); notifyTyping() }}
           onKeyDown={e => {
             if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {

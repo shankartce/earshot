@@ -7,6 +7,7 @@ import { profile, randomAvatar } from '../state/profile.ts'
 import { room, toast, updateProfile } from '../state/room.ts'
 import { autoFetch, setAutoFetch } from '../share/p2p.ts'
 import { autoShare, setAutoShare } from '../library/library.ts'
+import { aiAvailable, aiLibraryOptIn, setAiLibraryOptIn } from '../state/ai.ts'
 import { AutoShareSheet } from '../components/ShareSheet.tsx'
 import { LICENSES } from '../../shared/types.ts'
 import { BackLink } from './Join.tsx'
@@ -62,6 +63,18 @@ export function Settings() {
             onChange={e => { if (e.currentTarget.checked) { e.currentTarget.checked = false; setAskAutoShare(true) } else setAutoShare(null) }} />
         </label>
         {askAutoShare && <AutoShareSheet onClose={() => setAskAutoShare(false)} />}
+
+        <hr class="sep" />
+        <h2 class="section-h">AI DJ</h2>
+        <label class="toggle-row">
+          <span>
+            Let room DJs see my song list
+            <span class="hint">{aiAvailable.value
+              ? 'Titles, artists, albums and lengths only, never the audio, so a room’s 🤖 DJ can pick songs people actually have. Only sent while you’re in a room with the DJ on, kept in the server’s memory, and forgotten when you leave.'
+              : 'This Earshot server doesn’t have an AI set up.'}</span>
+          </span>
+          <input type="checkbox" role="switch" class="switch" checked={aiLibraryOptIn.value} onChange={e => setAiLibraryOptIn(e.currentTarget.checked)} />
+        </label>
 
         <hr class="sep" />
         <h2 class="section-h">Sync tuning</h2>

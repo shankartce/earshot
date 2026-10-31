@@ -2,7 +2,7 @@
 // ask it to change things via commands. Reconnects re-join with the saved token and take a fresh snapshot.
 import { computed, signal } from '@preact/signals'
 import type { Ack, Joined, PlaybackCommand, QueueCommand, RoomPeek } from '../../shared/events.ts'
-import type { Participant, Profile, QueueState, RoomSettings, RoomSnapshot } from '../../shared/types.ts'
+import { DJ_ID, type Participant, type Profile, type QueueState, type RoomSettings, type RoomSnapshot } from '../../shared/types.ts'
 import { applyQueue } from '../../server/state/room.ts' // the same pure reducer the server runs
 import { clock, socket } from '../realtime/socket.ts'
 import { forgetRoom, profile, rememberRoom, saveProfile, tokenFor } from './profile.ts'
@@ -19,7 +19,17 @@ export const currentItem = computed(() => {
   const r = room.value
   return r?.queue.items.find(i => i.id === r.playback.itemId) ?? null
 })
-export const participantById = (id: string) => room.value?.participants.find(p => p.id === id)
+/** The room's AI DJ, drawn like a person in chat and the people list. It has no seat on the server. */
+export const djParticipant = computed<Participant | null>(() => {
+  const r = room.value
+  if (!r) return null
+  return {
+    id: DJ_ID, displayName: r.settings.djName, avatar: { emoji: '🤖', color: '#b388ff' },
+    isOnline: true, isAway: false, joinedAt: r.createdAt, lastSeen: r.updatedAt, readiness: 'ready',
+  }
+})
+export const participantById = (id: string) =>
+  id === DJ_ID ? djParticipant.value ?? undefined : room.value?.participants.find(p => p.id === id)
 
 // ---- toasts / activity ----
 
@@ -48,9 +58,13 @@ function request<T>(event: string, ...args: unknown[]): Promise<Ack<T>> {
   })
 }
 
+/** Counts successful (re)joins, for things the server forgets when a socket rejoins (e.g. the DJ's song list). */
+export const joins = signal(0)
+
 function adopt(r: Ack<Joined>) {
   if (!r.ok) return r
   room.value = r.state
+  joins.value++
   me.value = r.you
   rememberRoom({ code: r.code, name: r.state.name, emoji: r.state.emoji, token: r.token })
   return r
