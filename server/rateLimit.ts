@@ -12,6 +12,7 @@ export const RULES: Rules = {
   share: [100, 10_000], // tiny metadata messages; clients reconcile against server state
   seen: [10, 5_000],
   people: [10, 10_000], // profile edits, make host, remove
+  ai: [3, 60_000], // @DJ requests and mood playlists: each one is a paid model call
 }
 
 export function rateLimiter(rules: Rules = RULES) {

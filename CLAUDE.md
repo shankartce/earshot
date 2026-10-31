@@ -9,18 +9,23 @@ Earshot ("Come listen with me.") is a set of shared listening rooms where each p
 - **The server is authoritative.** All state changes go through the pure reducer in `server/state/room.ts`, using server time only (`serverTimestamp`). Client timestamps and positions are never trusted, apart from a clamped SEEK target.
 - **Versioned commands.** Playback commands carry `baseVersion`; stale ones are rejected with `error: 'stale'`, which the client ignores silently. Queue ops target item ids; MOVE is version-checked.
 - **Client drift correction** lives in `src/audio/player.ts` + `src/sync/drift.ts`. The playhead math is `shared/playback.ts#positionAt`, the same on both sides.
+- **The AI sees metadata and chat only.** The room DJ (`server/ai/`, `shared/dj.ts`) gets track details, display names and recent chat; never audio, art, tokens or participant ids. Prompts use short ids (`t1`, `q1`) mapped back on the server, so the model can't invent a hash. The LLM is called **server-side only** (env `AI_*`, see `.env.example`): no key in the browser, no CSP change.
+- **The AI is off unless both are true:** the server has `AI_MODEL` set and the room host turns on `settings.aiDj` (default off).
+- **The DJ has no powers of its own.** `applyDjPlan` runs every action through `applyQueue`/`applyPlayback` as the person who asked, so room permissions hold; refusals become part of its reply. Its chat messages use `authorId: DJ_ID`; it is not in `participants`.
+- **Opted-in song lists (`ai:catalog`) live in server memory only**, per socket. Never saved to `rooms.json`, never in a snapshot or patch, dropped on leave/disconnect. `ai:playlist` uses the list for that request only.
 - **The Web Audio graph (visualizer) is gesture-gated.** A suspended AudioContext means silence, so the sync loop falls back to "Tap to tune in".
 
 ## Commands
 - `npm run dev` runs app + realtime in one process on :5173. Demo mode: Invite sheet → "Open as Sam".
 - `npm test`, `npm run typecheck`, `npm run build && npm start` (:3000, CSP enforced).
+- AI DJ locally: copy `.env.example` to `.env` (e.g. Ollama at `http://localhost:11434/v1`). Tests inject a fake `AiClient`; never call a real model from tests.
 
 ## Where things are
 See the "Project layout" section in README.md. Adding a realtime feature means: types in `shared/events.ts` → validator in `shared/validate.ts` → reducer in `server/state/room.ts` → handler in `server/websocket/handlers.ts` → client in `src/state/*` → a test in `tests/`.
 
 ## Gotchas
 - While the Vite dev server is running, edit files with the Write/Edit tools. Shell redirection (`cat > file`) can leave Vite serving an empty module on Windows; `touch` the file if exports vanish.
-- `player.ts`, `state/room.ts`, `state/social.ts` and `realtime/socket.ts` own long-lived side effects and force a full reload on HMR (`import.meta.hot.dispose`).
+- `player.ts`, `state/room.ts`, `state/social.ts`, `state/ai.ts` and `realtime/socket.ts` own long-lived side effects and force a full reload on HMR (`import.meta.hot.dispose`).
 - The client imports `applyQueue` from `server/state/room.ts` to predict queue edits. Keep that file free of Node-only imports.
 - Browser-only features need a secure origin (localhost or HTTPS).
 - Demo tabs (`?as=Name`) keep their identity and library index in sessionStorage. The OPFS blobs are shared but content-addressed.

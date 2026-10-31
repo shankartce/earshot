@@ -78,6 +78,12 @@ export interface ClientToServer {
   'share:offer': (p: { trackId: string; license: License }) => void
   'share:withdraw': (trackId: string) => void
   'rtc:signal': (p: { to: string; data: Signal }) => void
+  /** Whether this server has an AI model configured (the host still has to turn the DJ on per room). */
+  'ai:status': (reply: (r: { available: boolean }) => void) => void
+  /** Opt-in: your library's song details (never audio), so the room DJ can pick songs people own. [] clears. */
+  'ai:catalog': (tracks: Track[]) => void
+  /** Build a playlist from your own library for a mood. The list is used for this request only. */
+  'ai:playlist': (p: { prompt: string; tracks: Track[] }, reply: (r: Ack<{ name: string; trackIds: string[] }>) => void) => void
 }
 
 export interface ServerToClient {
@@ -91,4 +97,5 @@ export interface ServerToClient {
   'reaction': (p: { participantId: string; emoji: string; at: number }) => void
   'rtc:signal': (p: { from: string; data: Signal }) => void
   'room:removed': () => void // the host removed you; your token no longer works
+  'ai:error': (text: string) => void // to the person whose @DJ request didn't work out
 }

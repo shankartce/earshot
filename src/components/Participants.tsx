@@ -3,7 +3,8 @@ import { signal } from '@preact/signals'
 import { useState } from 'preact/hooks'
 import type { Participant, Profile } from '../../shared/types.ts'
 import { profile as myProfile } from '../state/profile.ts'
-import { currentItem, isHost, makeHost, me, removePerson, room, shownPlaying, toast, updateProfile } from '../state/room.ts'
+import { aiAvailable } from '../state/ai.ts'
+import { currentItem, djParticipant, isHost, makeHost, me, removePerson, room, shownPlaying, toast, updateProfile } from '../state/room.ts'
 import { Icon } from './icons.tsx'
 import { ProfileFields } from './ProfileForm.tsx'
 import { Avatar, Empty, Equalizer, Sheet } from './ui.tsx'
@@ -61,6 +62,15 @@ export function Participants({ onInvite }: { onInvite: () => void }) {
             </li>
           )
         })}
+        {r.settings.aiDj && aiAvailable.value && djParticipant.value && (
+          <li key="dj" class="person">
+            <span class="presence on"><Avatar avatar={djParticipant.value.avatar} size={38} /></span>
+            <div class="grow">
+              <p class="person-name">{djParticipant.value.displayName}<span class="tag">AI</span></p>
+              <p class="person-status">Ask in chat: @{r.settings.djName}</p>
+            </div>
+          </li>
+        )}
       </ul>
       {alone && (
         <Empty icon="users" title="Your room is quiet.">

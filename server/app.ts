@@ -3,6 +3,7 @@
 import express from 'express'
 import http from 'node:http'
 import path from 'node:path'
+import type { AiClient } from './ai/provider.ts'
 import type { RoomStore } from './rooms/store.ts'
 import { attachRealtime } from './websocket/handlers.ts'
 
@@ -21,7 +22,7 @@ const CSP = [
   "form-action 'self'",
 ].join('; ')
 
-export function createServer({ store, dist, graceMs }: { store: RoomStore; dist: string; graceMs?: number }) {
+export function createServer({ store, dist, graceMs, ai }: { store: RoomStore; dist: string; graceMs?: number; ai?: AiClient | null }) {
   const app = express()
   app.disable('x-powered-by')
   app.use((_req, res, next) => {
@@ -40,6 +41,6 @@ export function createServer({ store, dist, graceMs }: { store: RoomStore; dist:
   app.use((_req, res) => res.status(404).end())
 
   const server = http.createServer(app)
-  attachRealtime(server, { store, graceMs })
+  attachRealtime(server, { store, graceMs, ai })
   return server
 }

@@ -57,7 +57,15 @@ export interface RoomSettings {
   queueEditing: Permission
   allowChat: boolean
   allowReactions: boolean
+  aiDj: boolean // the host turned on the room's AI DJ (only works if the server has a model configured)
+  djName: string // what people @mention, e.g. "DJ"
 }
+
+/** Author id of the AI DJ's chat messages. Can't collide with participant ids (UUIDs). */
+export const DJ_ID = 'ai:dj'
+export const DJ_DEFAULT_NAME = 'DJ'
+/** Something you can @mention on a phone keyboard: letters, digits, _ and -. */
+export const DJ_NAME_RE = /^[\p{L}\p{N}_-]{1,16}$/u
 
 export interface ChatMessage {
   id: string

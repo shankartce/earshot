@@ -445,6 +445,8 @@ fieldset:disabled .segmented label { cursor: not-allowed; opacity: 0.6; }
 .lib-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 .mini-select { background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); border-radius: 99px; height: 32px; padding: 0 8px; font-size: 12.5px; max-width: 110px; }
 .pl-create { margin-bottom: 14px; }
+.pl-mood { margin-bottom: 14px; }
+.pl-mood .hint { margin-top: 6px; }
 .pl-toggle { border: 0; background: none; text-align: left; padding: 0; cursor: pointer; }
 .pl-tracks { margin: 0 0 10px 60px; display: grid; gap: 2px; }
 .pl-track { display: flex; align-items: center; gap: 12px; padding: 4px 6px; border-radius: 10px; }
@@ -546,6 +548,8 @@ fieldset:disabled .segmented label { cursor: not-allowed; opacity: 0.6; }
 @keyframes dot { 0%, 60%, 100% { transform: translateY(0); opacity: 0.45; } 30% { transform: translateY(-4px); opacity: 1; } }
 .new-below { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); cursor: pointer; color: var(--text); background: var(--surface-solid); box-shadow: var(--shadow); }
 .composer-wrap { margin-top: 6px; }
+.dj-hint { margin-bottom: 6px; }
+.dj-hint .chip { width: auto; height: 30px; padding: 0 12px; font-size: 13px; color: var(--text-muted); border-radius: 999px; display: inline-flex; gap: 6px; }
 .reply-bar { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; margin-bottom: 6px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); font-size: 13px; color: var(--text-muted); animation: toast-in var(--dur) var(--ease); }
 .reply-bar .reply-who { display: block; font-weight: 650; color: var(--text); font-size: 12.5px; }
 .reply-bar .reply-text { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

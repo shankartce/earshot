@@ -1,7 +1,7 @@
 // Payload validators for the trust boundary. Each returns a clean value or null — never throws.
 import type { PlaybackCommand, QueueCommand, Signal } from './events.ts'
 import type { License, Profile, Readiness, RoomSettings, Track } from './types.ts'
-import { LICENSES } from './types.ts'
+import { DJ_NAME_RE, LICENSES } from './types.ts'
 
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 export const CODE_LENGTH = 5
@@ -91,9 +91,10 @@ export function parseSettingsPatch(x: unknown): (Partial<RoomSettings> & { name?
   for (const k of ['playbackControl', 'queueEditing'] as const) {
     if (x[k] === 'host' || x[k] === 'everyone') out[k] = x[k]
   }
-  for (const k of ['allowChat', 'allowReactions'] as const) {
+  for (const k of ['allowChat', 'allowReactions', 'aiDj'] as const) {
     if (typeof x[k] === 'boolean') out[k] = x[k]
   }
+  if (typeof x.djName === 'string' && DJ_NAME_RE.test(x.djName.trim())) out.djName = x.djName.trim()
   if (x.name !== undefined) out.name = cleanText(x.name, 40) || 'Listening room'
   if (x.emoji !== undefined) out.emoji = cleanText(x.emoji, 4)
   return out
@@ -141,6 +142,17 @@ const PICTO_RE = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u
 /** Any single emoji (👍🏽, ❤️‍🔥, 🇮🇳 …), up to 16 UTF-16 units. Keycaps and bare digits/#/* are refused. */
 export const parseReaction = (x: unknown): string | null =>
   typeof x === 'string' && x.length <= 16 && EMOJI_RE.test(x) && PICTO_RE.test(x) && !/[#*0-9]/.test(x) ? x : null
+
+/** A list of tracks (ai:catalog, ai:playlist): bad entries dropped, capped, deduped by id. */
+export function parseTracks(x: unknown, max: number): Track[] {
+  if (!Array.isArray(x)) return []
+  const out = new Map<string, Track>()
+  for (const t of x.slice(0, max)) {
+    const track = parseTrack(t)
+    if (track) out.set(track.id, track)
+  }
+  return [...out.values()]
+}
 
 /** chat:send payload: the original bare string, or `{ text, replyTo }`. */
 export function parseChatSend(x: unknown): { text: string; replyTo?: string } | null {

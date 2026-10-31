@@ -12,6 +12,7 @@ import {
   type LocalTrack, type Playlist,
 } from '../library/library.ts'
 import { playNext, queueTracks, reportImport } from '../state/actions.ts'
+import { aiAvailable, makePlaylist } from '../state/ai.ts'
 import { room, toast } from '../state/room.ts'
 import { fmtTime } from '../utils/format.ts'
 import { LICENSE_URLS, LICENSES } from '../../shared/types.ts'
@@ -275,8 +276,29 @@ function SelectBar({ ids, onDone }: { ids: ReadonlySet<string>; onDone: () => vo
 function Playlists() {
   const [name, setName] = useState('')
   const [open, setOpen] = useState<string | null>(null)
+  const [mood, setMood] = useState('')
+  const [thinking, setThinking] = useState(false)
+  const fromMood = async () => {
+    setThinking(true)
+    const r = await makePlaylist(mood.trim())
+    setThinking(false)
+    if (!r.ok) return toast(r.error, { tone: 'error' })
+    setMood('')
+    setOpen(r.playlist.id)
+    toast(`Made “${r.playlist.name}” with ${r.playlist.trackIds.length} songs`)
+  }
   return (
     <>
+      {aiAvailable.value && localTracks.value.size > 0 && (
+        <form class="pl-mood" onSubmit={e => { e.preventDefault(); if (mood.trim() && !thinking) fromMood() }}>
+          <div class="input-row">
+            <input class="input" placeholder="✨ Describe a mood: rainy Sunday coffee…" value={mood} maxLength={200}
+              onInput={e => setMood(e.currentTarget.value)} aria-label="Describe a mood for a new playlist" disabled={thinking} />
+            <button class="btn" disabled={!mood.trim() || thinking}>{thinking ? 'Thinking…' : 'Make playlist'}</button>
+          </div>
+          <p class="hint">Built from your own library. Your song list (titles and artists, never audio) is sent to this server’s AI for this request only.</p>
+        </form>
+      )}
       <form class="input-row pl-create" onSubmit={e => {
         e.preventDefault()
         const p = createPlaylist(name)

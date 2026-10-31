@@ -2,7 +2,7 @@
 // (always the server clock) and never trusts client time. Pure enough to unit-test without sockets.
 import type { PlaybackCommand, QueueCommand } from '../../shared/events.ts'
 import { positionAt } from '../../shared/playback.ts'
-import type { ChatMessage, License, Participant, Profile, QueueItem, RoomSettings, RoomSnapshot } from '../../shared/types.ts'
+import { DJ_DEFAULT_NAME, type ChatMessage, type License, type Participant, type Profile, type QueueItem, type RoomSettings, type RoomSnapshot } from '../../shared/types.ts'
 
 export interface Room extends RoomSnapshot {
   tokens: Record<string, string> // secret session token -> participant id (never sent to clients)
@@ -16,10 +16,15 @@ export const LIMITS = { queue: 500, participants: 50, chat: 100, history: 20, pr
 
 const fail = (error: string): Result => ({ ok: false, error })
 
+export const defaultSettings = (): RoomSettings => ({
+  playbackControl: 'everyone', queueEditing: 'everyone', allowChat: true, allowReactions: true,
+  aiDj: false, djName: DJ_DEFAULT_NAME,
+})
+
 export function createRoom(code: string, name: string, emoji: string, now: number): Room {
   return {
     code, name, emoji, hostId: null,
-    settings: { playbackControl: 'everyone', queueEditing: 'everyone', allowChat: true, allowReactions: true },
+    settings: defaultSettings(),
     participants: [],
     queue: { items: [], version: 0 },
     playback: { itemId: null, isPlaying: false, position: 0, serverTimestamp: now, version: 0 },
